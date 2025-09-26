@@ -6,6 +6,18 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# 检测Docker Compose命令
+if command -v docker-compose &> /dev/null && docker-compose --version &>/dev/null; then
+    COMPOSE_CMD="docker-compose"
+elif command -v ~/.local/bin/docker-compose &> /dev/null; then
+    COMPOSE_CMD="~/.local/bin/docker-compose"
+elif docker compose version &> /dev/null; then
+    COMPOSE_CMD="docker compose"
+else
+    echo "错误: Docker Compose 未找到"
+    exit 1
+fi
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -50,11 +62,7 @@ show_usage() {
 check_services() {
     cd "$PROJECT_DIR"
 
-    if command -v docker-compose &> /dev/null; then
-        local running_services=$(docker-compose ps --services --filter "status=running")
-    else
-        local running_services=$(docker compose ps --services --filter "status=running")
-    fi
+    local running_services=$(eval "$COMPOSE_CMD ps --services --filter \"status=running\"")
 
     if [ -z "$running_services" ]; then
         echo -e "${RED}错误: 没有运行中的服务${NC}"
@@ -69,12 +77,7 @@ show_status() {
     echo
 
     cd "$PROJECT_DIR"
-
-    if command -v docker-compose &> /dev/null; then
-        docker-compose ps
-    else
-        docker compose ps
-    fi
+    eval "$COMPOSE_CMD ps"
 
     echo
 }
@@ -88,15 +91,8 @@ view_logs() {
 
     cd "$PROJECT_DIR"
 
-    local docker_cmd=""
-    if command -v docker-compose &> /dev/null; then
-        docker_cmd="docker-compose"
-    else
-        docker_cmd="docker compose"
-    fi
-
     # 构建日志命令
-    local log_cmd="$docker_cmd logs"
+    local log_cmd="$COMPOSE_CMD logs"
 
     # 添加选项
     if [ "$follow" = "true" ]; then

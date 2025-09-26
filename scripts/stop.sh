@@ -8,6 +8,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# 检测Docker Compose命令
+if command -v docker-compose &> /dev/null && docker-compose --version &>/dev/null; then
+    COMPOSE_CMD="docker-compose"
+elif command -v ~/.local/bin/docker-compose &> /dev/null; then
+    COMPOSE_CMD="~/.local/bin/docker-compose"
+elif docker compose version &> /dev/null; then
+    COMPOSE_CMD="docker compose"
+else
+    echo "错误: Docker Compose 未找到"
+    exit 1
+fi
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -38,20 +50,11 @@ stop_services() {
 
     cd "$PROJECT_DIR"
 
-    if command -v docker-compose &> /dev/null; then
-        if docker-compose ps -q | grep -q .; then
-            docker-compose down
-            log_success "服务已停止"
-        else
-            log_info "没有运行中的服务"
-        fi
+    if eval "$COMPOSE_CMD ps -q" | grep -q .; then
+        eval "$COMPOSE_CMD down"
+        log_success "服务已停止"
     else
-        if docker compose ps -q | grep -q .; then
-            docker compose down
-            log_success "服务已停止"
-        else
-            log_info "没有运行中的服务"
-        fi
+        log_info "没有运行中的服务"
     fi
 }
 
@@ -61,21 +64,13 @@ show_status() {
 
     cd "$PROJECT_DIR"
 
-    if command -v docker-compose &> /dev/null; then
-        local running_containers=$(docker-compose ps -q)
-    else
-        local running_containers=$(docker compose ps -q)
-    fi
+    local running_containers=$(eval "$COMPOSE_CMD ps -q")
 
     if [ -z "$running_containers" ]; then
         log_success "所有服务已停止"
     else
         log_warning "仍有运行中的容器:"
-        if command -v docker-compose &> /dev/null; then
-            docker-compose ps
-        else
-            docker compose ps
-        fi
+        eval "$COMPOSE_CMD ps"
     fi
 }
 
@@ -96,20 +91,12 @@ cleanup_options() {
         2)
             log_info "删除容器..."
             cd "$PROJECT_DIR"
-            if command -v docker-compose &> /dev/null; then
-                docker-compose down --remove-orphans
-            else
-                docker compose down --remove-orphans
-            fi
+            eval "$COMPOSE_CMD down --remove-orphans"
             ;;
         3)
             log_info "删除容器和网络..."
             cd "$PROJECT_DIR"
-            if command -v docker-compose &> /dev/null; then
-                docker-compose down --remove-orphans --networks
-            else
-                docker compose down --remove-orphans
-            fi
+            eval "$COMPOSE_CMD down --remove-orphans"
             ;;
         4)
             log_warning "警告: 这将删除所有数据!"
@@ -118,11 +105,7 @@ cleanup_options() {
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 log_info "完全清理..."
                 cd "$PROJECT_DIR"
-                if command -v docker-compose &> /dev/null; then
-                    docker-compose down --remove-orphans --volumes
-                else
-                    docker compose down --remove-orphans --volumes
-                fi
+                eval "$COMPOSE_CMD down --remove-orphans --volumes"
 
                 # 删除数据目录
                 log_info "删除数据目录..."
@@ -149,14 +132,8 @@ main() {
     cd "$PROJECT_DIR"
     local has_running_services=false
 
-    if command -v docker-compose &> /dev/null; then
-        if docker-compose ps -q | grep -q .; then
-            has_running_services=true
-        fi
-    else
-        if docker compose ps -q 2>/dev/null | grep -q .; then
-            has_running_services=true
-        fi
+    if eval "$COMPOSE_CMD ps -q" 2>/dev/null | grep -q .; then
+        has_running_services=true
     fi
 
     if [ "$has_running_services" = false ]; then
@@ -166,11 +143,7 @@ main() {
 
     # 显示当前运行的服务
     log_info "当前运行的服务:"
-    if command -v docker-compose &> /dev/null; then
-        docker-compose ps
-    else
-        docker compose ps
-    fi
+    eval "$COMPOSE_CMD ps"
 
     echo
     read -p "是否停止所有服务? (y/N): " -n 1 -r

@@ -41,7 +41,14 @@ check_dependencies() {
         exit 1
     fi
 
-    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+    # 检查Docker Compose
+    if command -v docker-compose &> /dev/null; then
+        COMPOSE_CMD="docker-compose"
+    elif command -v ~/.local/bin/docker-compose &> /dev/null; then
+        COMPOSE_CMD="~/.local/bin/docker-compose"
+    elif docker compose version &> /dev/null; then
+        COMPOSE_CMD="docker compose"
+    else
         log_error "Docker Compose 未安装或未在PATH中"
         exit 1
     fi
@@ -125,11 +132,7 @@ pull_images() {
 
     cd "$PROJECT_DIR"
 
-    if command -v docker-compose &> /dev/null; then
-        docker-compose pull
-    else
-        docker compose pull
-    fi
+    eval "$COMPOSE_CMD pull"
 
     log_success "镜像拉取完成"
 }
@@ -141,22 +144,14 @@ start_services() {
     cd "$PROJECT_DIR"
 
     # 启动核心服务
-    if command -v docker-compose &> /dev/null; then
-        docker-compose up -d db redis
-    else
-        docker compose up -d db redis
-    fi
+    eval "$COMPOSE_CMD up -d db redis"
 
     # 等待数据库启动
     log_info "等待数据库启动..."
     sleep 10
 
     # 启动应用服务
-    if command -v docker-compose &> /dev/null; then
-        docker-compose up -d
-    else
-        docker compose up -d
-    fi
+    eval "$COMPOSE_CMD up -d"
 
     log_success "服务启动完成"
 }
@@ -193,11 +188,7 @@ show_status() {
 
     cd "$PROJECT_DIR"
 
-    if command -v docker-compose &> /dev/null; then
-        docker-compose ps
-    else
-        docker compose ps
-    fi
+    eval "$COMPOSE_CMD ps"
 
     echo
     log_info "访问地址:"
@@ -207,8 +198,8 @@ show_status() {
     echo "  Redis管理 (调试模式): http://localhost:8081"
     echo
     log_info "日志查看命令:"
-    echo "  所有服务: docker-compose logs -f"
-    echo "  特定服务: docker-compose logs -f <service_name>"
+    echo "  所有服务: $COMPOSE_CMD logs -f"
+    echo "  特定服务: $COMPOSE_CMD logs -f <service_name>"
 }
 
 # 主函数
