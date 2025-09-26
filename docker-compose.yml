@@ -1,0 +1,169 @@
+version: '3.8'
+
+services:
+  # Nginx反向代理和静态文件服务
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./data/logs/nginx:/var/log/nginx
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+
+  # 前端Web应用
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=http://api:8000/api/v1
+    volumes:
+      - ./data/logs/web:/var/log/web
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+
+  # 后端API服务
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - NOTIFICATION_SERVICE_URL=http://notification:8001
+    volumes:
+      - ./data/logs/api:/var/log/api
+      - ./data/signals:/app/signals
+      - ./data/strategies:/app/strategies
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+
+  # FreqTrade策略服务
+  freqtrade:
+    build:
+      context: ./freqtrade
+      dockerfile: Dockerfile
+    environment:
+      - FREQTRADE_USER_DATA=/freqtrade/user_data
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      - ./freqtrade/user_data:/freqtrade/user_data
+      - ./data/signals:/app/signals
+      - ./data/logs/freqtrade:/var/log/freqtrade
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+
+  # 通知服务
+  notification:
+    build:
+      context: ./notification
+      dockerfile: Dockerfile
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # 通知渠道配置
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - WECHAT_CORP_ID=${WECHAT_CORP_ID}
+      - WECHAT_AGENT_ID=${WECHAT_AGENT_ID}
+      - WECHAT_SECRET=${WECHAT_SECRET}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+    volumes:
+      - ./data/logs/notification:/var/log/notification
+    depends_on:
+      - redis
+      - db
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+
+  # PostgreSQL数据库
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS="--encoding=UTF8 --locale=C"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"  # 开发时可以直接连接数据库
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+
+  # Redis缓存和消息队列
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./data/redis:/data
+    ports:
+      - "6379:6379"  # 开发时可以直接连接Redis
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+
+  # 可选：Redis管理界面
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:${REDIS_PASSWORD}
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+    profiles:
+      - debug
+
+  # 可选：PostgreSQL管理界面
+  adminer:
+    image: adminer:latest
+    environment:
+      - ADMINER_DEFAULT_SERVER=db
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - btc-watcher
+    profiles:
+      - debug
+
+networks:
+  btc-watcher:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
