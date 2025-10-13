@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Nginx反向代理和静态文件服务
   nginx:
@@ -32,69 +30,42 @@ services:
     networks:
       - btc-watcher
 
-  # 后端API服务
+  # 后端API服务 (集成FreqTrade管理和通知服务)
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile
     environment:
+      # 数据库配置
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY}
-      - NOTIFICATION_SERVICE_URL=http://notification:8001
+      # FreqTrade配置
+      - FREQTRADE_BASE_PORT=8081
+      - FREQTRADE_MAX_PORT=9080
+      - MAX_CONCURRENT_STRATEGIES=999
+      # 通知渠道配置
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - WECHAT_CORP_ID=${WECHAT_CORP_ID:-}
+      - WECHAT_AGENT_ID=${WECHAT_AGENT_ID:-}
+      - WECHAT_SECRET=${WECHAT_SECRET:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
     volumes:
       - ./data/logs/api:/var/log/api
       - ./data/signals:/app/signals
       - ./data/strategies:/app/strategies
+      - ./data/logs/freqtrade:/app/logs/freqtrade
+    ports:
+      - "8000:8000"
+      # FreqTrade实例端口范围 (999个端口)
+      - "8081-9080:8081-9080"
     depends_on:
       - db
       - redis
-    restart: unless-stopped
-    networks:
-      - btc-watcher
-
-  # FreqTrade策略服务
-  freqtrade:
-    build:
-      context: ./freqtrade
-      dockerfile: Dockerfile
-    environment:
-      - FREQTRADE_USER_DATA=/freqtrade/user_data
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-    volumes:
-      - ./freqtrade/user_data:/freqtrade/user_data
-      - ./data/signals:/app/signals
-      - ./data/logs/freqtrade:/var/log/freqtrade
-    depends_on:
-      - db
-      - redis
-    restart: unless-stopped
-    networks:
-      - btc-watcher
-
-  # 通知服务
-  notification:
-    build:
-      context: ./notification
-      dockerfile: Dockerfile
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      # 通知渠道配置
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - WECHAT_CORP_ID=${WECHAT_CORP_ID}
-      - WECHAT_AGENT_ID=${WECHAT_AGENT_ID}
-      - WECHAT_SECRET=${WECHAT_SECRET}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-    volumes:
-      - ./data/logs/notification:/var/log/notification
-    depends_on:
-      - redis
-      - db
     restart: unless-stopped
     networks:
       - btc-watcher
