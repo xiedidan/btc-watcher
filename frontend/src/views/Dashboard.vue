@@ -10,7 +10,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ overview.total_strategies || 0 }}</div>
-              <div class="stat-label">总策略数</div>
+              <div class="stat-label">{{ t('dashboard.totalStrategies') }}</div>
             </div>
           </div>
         </el-card>
@@ -24,7 +24,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ overview.running_strategies || 0 }}</div>
-              <div class="stat-label">运行中</div>
+              <div class="stat-label">{{ t('dashboard.running') }}</div>
             </div>
           </div>
         </el-card>
@@ -38,7 +38,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ signalStats.total_signals || 0 }}</div>
-              <div class="stat-label">今日信号</div>
+              <div class="stat-label">{{ t('dashboard.todaySignals') }}</div>
             </div>
           </div>
         </el-card>
@@ -53,8 +53,8 @@
             <div class="stat-info">
               <div class="stat-value">{{ capacity.utilization_percent?.toFixed(1) || 0 }}%</div>
               <div class="stat-label">
-                策略容量
-                <el-tooltip placement="top" content="当前运行策略数占最大并发数的比例">
+                {{ t('dashboard.strategyCapacity') }}
+                <el-tooltip placement="top" :content="t('dashboard.capacityTooltip')">
                   <el-icon style="font-size: 10px; margin-left: 2px; cursor: help"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </div>
@@ -71,16 +71,16 @@
           <template #header>
             <div class="card-header">
               <div>
-                <span style="font-weight: 600">信号趋势</span>
+                <span style="font-weight: 600">{{ t('dashboard.signalTrend') }}</span>
                 <el-tooltip placement="top">
                   <template #content>
                     <div style="max-width: 250px">
-                      <div><strong>信号统计：</strong></div>
-                      <div>实时监控交易信号的生成趋势</div>
+                      <div><strong>{{ t('dashboard.signalStats') }}：</strong></div>
+                      <div>{{ t('dashboard.signalStatsDesc') }}</div>
                       <div style="margin-top: 8px">
-                        <span style="color: #67C23A">● </span>强信号：{{ signalStats.strong_signals || 0 }} 个<br>
-                        <span style="color: #E6A23C">● </span>中等信号：{{ signalStats.medium_signals || 0 }} 个<br>
-                        <span style="color: #909399">● </span>弱信号：{{ signalStats.weak_signals || 0 }} 个
+                        <span style="color: #67C23A">● </span>{{ t('dashboard.strongSignals') }}：{{ signalStats.strong_signals || 0 }} 个<br>
+                        <span style="color: #E6A23C">● </span>{{ t('dashboard.mediumSignals') }}：{{ signalStats.medium_signals || 0 }} 个<br>
+                        <span style="color: #909399">● </span>{{ t('dashboard.weakSignals') }}：{{ signalStats.weak_signals || 0 }} 个
                       </div>
                     </div>
                   </template>
@@ -89,14 +89,14 @@
               </div>
               <div style="display: flex; gap: 8px; align-items: center">
                 <el-select v-model="signalGroupBy" size="small" style="width: 120px" @change="fetchSignalTrend">
-                  <el-option label="按货币对" value="pair" />
-                  <el-option label="按策略" value="strategy" />
-                  <el-option label="总体" value="all" />
+                  <el-option :label="t('dashboard.byPair')" value="pair" />
+                  <el-option :label="t('dashboard.byStrategy')" value="strategy" />
+                  <el-option :label="t('dashboard.overall')" value="all" />
                 </el-select>
                 <el-radio-group v-model="trendPeriod" size="small" @change="fetchSignalTrend">
-                  <el-radio-button :label="24">24小时</el-radio-button>
-                  <el-radio-button :label="72">3天</el-radio-button>
-                  <el-radio-button :label="168">7天</el-radio-button>
+                  <el-radio-button :label="24">{{ t('dashboard.hours24') }}</el-radio-button>
+                  <el-radio-button :label="72">{{ t('dashboard.days3') }}</el-radio-button>
+                  <el-radio-button :label="168">{{ t('dashboard.days7') }}</el-radio-button>
                 </el-radio-group>
               </div>
             </div>
@@ -108,7 +108,7 @@
       <el-col :span="8">
         <el-card>
           <template #header>
-            <span>信号分布</span>
+            <span>{{ t('dashboard.signalDistribution') }}</span>
           </template>
           <v-chart :option="signalDistributionOption" style="height: 220px" />
         </el-card>
@@ -119,25 +119,25 @@
     <el-card class="strategies-card">
       <template #header>
         <div class="card-header">
-          <span>运行中的策略</span>
+          <span>{{ t('dashboard.runningStrategies') }}</span>
           <el-button type="primary" @click="$router.push('/strategies')">
             <el-icon style="margin-right: 4px"><Operation /></el-icon>
-            管理策略
+            {{ t('dashboard.manageStrategies') }}
           </el-button>
         </div>
       </template>
 
       <el-table :data="runningStrategies" style="width: 100%">
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="策略名称" />
-        <el-table-column prop="exchange" label="交易所" width="120" />
-        <el-table-column prop="port" label="端口" width="100" />
-        <el-table-column label="状态" width="100">
+        <el-table-column prop="id" :label="t('dashboard.id')" width="80" />
+        <el-table-column prop="name" :label="t('dashboard.strategyName')" />
+        <el-table-column prop="exchange" :label="t('dashboard.exchange')" width="120" />
+        <el-table-column prop="port" :label="t('dashboard.port')" width="100" />
+        <el-table-column :label="t('dashboard.status')" width="100">
           <template #default="{ row }">
-            <el-tag type="success">运行中</el-tag>
+            <el-tag type="success">{{ t('dashboard.running') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="started_at" label="启动时间" width="180" />
+        <el-table-column prop="started_at" :label="t('dashboard.startedAt')" width="180" />
       </el-table>
     </el-card>
   </div>
@@ -145,10 +145,13 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useStrategyStore } from '@/stores/strategy'
 import { useSystemStore } from '@/stores/system'
 import { signalAPI } from '@/api'
 import { Operation, Check, Notification, Odometer, QuestionFilled } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const strategyStore = useStrategyStore()
 const systemStore = useSystemStore()
@@ -167,13 +170,13 @@ const signalTrendOption = ref({
     formatter: (params) => {
       let result = `${params[0].name}<br/>`
       params.forEach(item => {
-        result += `<span style="color: ${item.color}">● </span>${item.seriesName}: ${item.value} 个<br/>`
+        result += `<span style="color: ${item.color}">● </span>${item.seriesName}: ${item.value}<br/>`
       })
       return result
     }
   },
   legend: {
-    data: ['强信号', '中等信号', '弱信号'],
+    data: [],
     bottom: '0%',
     left: 'center'
   },
@@ -183,7 +186,7 @@ const signalTrendOption = ref({
   },
   yAxis: {
     type: 'value',
-    name: '信号数量',
+    name: '',
     minInterval: 1
   },
   grid: {
@@ -194,7 +197,7 @@ const signalTrendOption = ref({
   },
   series: [
     {
-      name: '强信号',
+      name: '',
       data: [],
       type: 'line',
       smooth: true,
@@ -202,7 +205,7 @@ const signalTrendOption = ref({
       itemStyle: { color: '#67C23A' }
     },
     {
-      name: '中等信号',
+      name: '',
       data: [],
       type: 'line',
       smooth: true,
@@ -210,7 +213,7 @@ const signalTrendOption = ref({
       itemStyle: { color: '#E6A23C' }
     },
     {
-      name: '弱信号',
+      name: '',
       data: [],
       type: 'line',
       smooth: true,
@@ -273,9 +276,9 @@ const fetchDashboardData = async () => {
 
     // 更新信号分布图表
     signalDistributionOption.value.series[0].data = [
-      { value: signalData.strong_signals, name: '强信号', itemStyle: { color: '#67C23A' } },
-      { value: signalData.medium_signals, name: '中等信号', itemStyle: { color: '#E6A23C' } },
-      { value: signalData.weak_signals, name: '弱信号', itemStyle: { color: '#909399' } }
+      { value: signalData.strong_signals, name: t('dashboard.strongSignals'), itemStyle: { color: '#67C23A' } },
+      { value: signalData.medium_signals, name: t('dashboard.mediumSignals'), itemStyle: { color: '#E6A23C' } },
+      { value: signalData.weak_signals, name: t('dashboard.weakSignals'), itemStyle: { color: '#909399' } }
     ]
   } catch (error) {
     console.error('Failed to fetch dashboard data:', error)
@@ -288,6 +291,17 @@ const fetchSignalTrend = async () => {
       hours: trendPeriod.value,
       group_by: signalGroupBy.value
     })
+
+    // Update chart labels
+    signalTrendOption.value.yAxis.name = t('dashboard.signalQuantity')
+    signalTrendOption.value.legend.data = [
+      t('dashboard.strongSignals'),
+      t('dashboard.mediumSignals'),
+      t('dashboard.weakSignals')
+    ]
+    signalTrendOption.value.series[0].name = t('dashboard.strongSignals')
+    signalTrendOption.value.series[1].name = t('dashboard.mediumSignals')
+    signalTrendOption.value.series[2].name = t('dashboard.weakSignals')
 
     // Extract time labels
     signalTrendOption.value.xAxis.data = trendData.data_points.map(d => {

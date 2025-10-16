@@ -6,10 +6,10 @@
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>系统健康状态</span>
+              <span>{{ t('monitoring.systemHealth') }}</span>
               <el-button size="small" @click="refreshData">
                 <el-icon><Refresh /></el-icon>
-                刷新
+                {{ t('monitoring.refresh') }}
               </el-button>
             </div>
           </template>
@@ -19,7 +19,7 @@
               <div class="metric-card">
                 <div class="metric-header">
                   <el-icon :size="24" color="#409EFF"><Odometer /></el-icon>
-                  <span class="metric-title">CPU使用率</span>
+                  <span class="metric-title">{{ t('monitoring.cpuUsage') }}</span>
                 </div>
                 <div class="metric-content">
                   <el-progress
@@ -36,7 +36,7 @@
               <div class="metric-card">
                 <div class="metric-header">
                   <el-icon :size="24" color="#67C23A"><Coin /></el-icon>
-                  <span class="metric-title">内存使用率</span>
+                  <span class="metric-title">{{ t('monitoring.memoryUsage') }}</span>
                 </div>
                 <div class="metric-content">
                   <el-progress
@@ -53,7 +53,7 @@
               <div class="metric-card">
                 <div class="metric-header">
                   <el-icon :size="24" color="#E6A23C"><Document /></el-icon>
-                  <span class="metric-title">磁盘使用率</span>
+                  <span class="metric-title">{{ t('monitoring.diskUsage') }}</span>
                 </div>
                 <div class="metric-content">
                   <el-progress
@@ -80,7 +80,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ capacity.max_strategies || 999 }}</div>
-              <div class="stat-label">最大策略数</div>
+              <div class="stat-label">{{ t('monitoring.maxStrategies') }}</div>
             </div>
           </div>
         </el-card>
@@ -94,7 +94,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ capacity.running_strategies || 0 }}</div>
-              <div class="stat-label">运行中策略</div>
+              <div class="stat-label">{{ t('monitoring.runningStrategies') }}</div>
             </div>
           </div>
         </el-card>
@@ -108,7 +108,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ capacity.available_slots || 999 }}</div>
-              <div class="stat-label">可用端口数</div>
+              <div class="stat-label">{{ t('monitoring.availablePorts') }}</div>
             </div>
           </div>
         </el-card>
@@ -122,7 +122,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ capacity.utilization_percent || 0 }}%</div>
-              <div class="stat-label">容量使用率</div>
+              <div class="stat-label">{{ t('monitoring.capacityUsage') }}</div>
             </div>
           </div>
         </el-card>
@@ -135,37 +135,37 @@
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>系统详细信息</span>
+              <span>{{ t('monitoring.systemDetails') }}</span>
               <el-tag v-if="lastUpdate" size="small">
-                最后更新: {{ lastUpdate }}
+                {{ t('monitoring.lastUpdate') }}: {{ lastUpdate }}
               </el-tag>
             </div>
           </template>
 
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="系统负载 (1/5/15分钟)">
+            <el-descriptions-item :label="t('monitoring.systemLoad')">
               {{ systemLoad }}
             </el-descriptions-item>
-            <el-descriptions-item label="CPU核心数">
+            <el-descriptions-item :label="t('monitoring.cpuCores')">
               {{ cpuCores }}
             </el-descriptions-item>
-            <el-descriptions-item label="内存总量" :span="2">
+            <el-descriptions-item :label="t('monitoring.totalMemory')" :span="2">
               {{ formatBytes(memoryTotal) }}
             </el-descriptions-item>
-            <el-descriptions-item label="内存已用" :span="2">
+            <el-descriptions-item :label="t('monitoring.usedMemory')" :span="2">
               {{ formatBytes(memoryUsed) }}
             </el-descriptions-item>
-            <el-descriptions-item label="磁盘总量" :span="2">
+            <el-descriptions-item :label="t('monitoring.totalDisk')" :span="2">
               {{ formatBytes(diskTotal) }}
             </el-descriptions-item>
-            <el-descriptions-item label="磁盘已用" :span="2">
+            <el-descriptions-item :label="t('monitoring.usedDisk')" :span="2">
               {{ formatBytes(diskUsed) }}
             </el-descriptions-item>
-            <el-descriptions-item label="端口范围" :span="2">
-              {{ capacity.port_range || 'N/A' }} (每个策略独占一个端口)
+            <el-descriptions-item :label="t('monitoring.portRange')" :span="2">
+              {{ capacity.port_range || 'N/A' }} ({{ t('monitoring.portNote') }})
             </el-descriptions-item>
-            <el-descriptions-item label="架构模式" :span="2">
-              多实例反向代理 ({{ capacity.architecture || 'multi_instance_reverse_proxy' }})
+            <el-descriptions-item :label="t('monitoring.architecture')" :span="2">
+              {{ t('monitoring.multiInstanceProxy') }} ({{ capacity.architecture || 'multi_instance_reverse_proxy' }})
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
@@ -176,6 +176,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { systemAPI, monitoringAPI } from '@/api'
 import {
   Odometer,
@@ -188,6 +189,7 @@ import {
   Refresh
 } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 // 系统指标
 const cpuUsage = ref(0)
 const memoryUsage = ref(0)
