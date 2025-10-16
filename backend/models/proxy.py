@@ -17,6 +17,7 @@ class Proxy(Base):
     proxy_type = Column(String(20), nullable=False)  # http, https, socks5
     host = Column(String(100), nullable=False)
     port = Column(Integer, nullable=False)
+    priority = Column(Integer, default=1)  # 优先级，数字越小优先级越高
 
     # Authentication
     username = Column(String(100), nullable=True)

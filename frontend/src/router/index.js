@@ -28,10 +28,22 @@ const router = createRouter({
           meta: { title: '策略管理' }
         },
         {
+          path: 'drafts',
+          name: 'drafts',
+          component: () => import('@/views/Drafts.vue'),
+          meta: { title: '草稿管理' }
+        },
+        {
           path: 'signals',
           name: 'signals',
           component: () => import('@/views/Signals.vue'),
           meta: { title: '信号列表' }
+        },
+        {
+          path: 'proxies',
+          name: 'proxies',
+          component: () => import('@/views/Proxies.vue'),
+          meta: { title: '代理管理' }
         },
         {
           path: 'monitoring',

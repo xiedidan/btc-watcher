@@ -7,7 +7,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
@@ -15,25 +15,33 @@ import logging
 from database import get_db
 from models.user import User
 from config import settings
+from schemas.user import UserCreate, UserResponse, PasswordChange, Token
+from services.token_cache import get_token_cache
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
-
-
+# Password hashing functions
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码"""
-    return pwd_context.verify(plain_password, hashed_password)
+    """验证密码 - 使用bcrypt直接验证"""
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    """生成密码哈希"""
-    return pwd_context.hash(password)
+    """生成密码哈希 - 使用bcrypt直接hash"""
+    return bcrypt.hashpw(
+        password.encode('utf-8'),
+        bcrypt.gensalt()
+    ).decode('utf-8')
+
+# OAuth2 scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -57,7 +65,7 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> User:
-    """获取当前用户"""
+    """获取当前用户 - 使用Redis缓存优化"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -65,6 +73,24 @@ async def get_current_user(
     )
 
     try:
+        # Step 1: 检查Redis缓存 (优先级最高)
+        token_cache = get_token_cache()
+        if token_cache:
+            cached_user = await token_cache.get_cached_user(token)
+            if cached_user:
+                # 从缓存获取用户数据，避免数据库查询
+                result = await db.execute(
+                    select(User).where(User.id == cached_user["user_id"])
+                )
+                user = result.scalar_one_or_none()
+                if user and user.is_active:
+                    logger.debug(f"✅ Cache hit for user {user.username}")
+                    return user
+                else:
+                    # 缓存的用户已被禁用或删除，失效缓存
+                    await token_cache.invalidate_token(token)
+
+        # Step 2: 缓存未命中，解析JWT token
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
@@ -73,9 +99,11 @@ async def get_current_user(
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception
+
     except JWTError:
         raise credentials_exception
 
+    # Step 3: 从数据库查询用户
     result = await db.execute(
         select(User).where(User.username == username)
     )
@@ -83,6 +111,19 @@ async def get_current_user(
 
     if user is None:
         raise credentials_exception
+
+    # Step 4: 查询成功后，缓存用户数据
+    if token_cache and user:
+        await token_cache.cache_token(
+            token,
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_active": user.is_active
+            }
+        )
+        logger.debug(f"📦 Cached user data for {user.username}")
 
     return user
 
@@ -96,34 +137,32 @@ async def get_current_active_user(
     return current_user
 
 
-@router.post("/register")
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
-    username: str,
-    email: str,
-    password: str,
+    user_data: UserCreate,
     db: AsyncSession = Depends(get_db)
 ):
     """用户注册"""
     try:
         # 检查用户名是否已存在
         result = await db.execute(
-            select(User).where(User.username == username)
+            select(User).where(User.username == user_data.username)
         )
         if result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Username already registered")
 
         # 检查邮箱是否已存在
         result = await db.execute(
-            select(User).where(User.email == email)
+            select(User).where(User.email == user_data.email)
         )
         if result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Email already registered")
 
         # 创建用户
         user = User(
-            username=username,
-            email=email,
-            hashed_password=get_password_hash(password),
+            username=user_data.username,
+            email=user_data.email,
+            hashed_password=get_password_hash(user_data.password),
             is_active=True,
             is_superuser=False
         )
@@ -132,14 +171,9 @@ async def register(
         await db.commit()
         await db.refresh(user)
 
-        logger.info(f"New user registered: {username}")
+        logger.info(f"New user registered: {user_data.username}")
 
-        return {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "message": "User registered successfully"
-        }
+        return user
 
     except HTTPException:
         raise
@@ -149,12 +183,12 @@ async def register(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/token")
+@router.post("/token", response_model=Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db)
 ):
-    """用户登录"""
+    """用户登录 - 支持Token缓存"""
     try:
         # 查找用户
         result = await db.execute(
@@ -180,18 +214,27 @@ async def login(
         # 创建访问令牌
         access_token = create_access_token(data={"sub": user.username})
 
-        logger.info(f"User logged in: {user.username}")
+        # 缓存token到Redis
+        token_cache = get_token_cache()
+        if token_cache:
+            await token_cache.cache_token(
+                access_token,
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "is_active": user.is_active
+                }
+            )
+            logger.info(f"User logged in with token cache: {user.username}")
+        else:
+            logger.info(f"User logged in (no cache): {user.username}")
 
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "is_superuser": user.is_superuser
-            }
-        }
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            user=UserResponse.model_validate(user)
+        )
 
     except HTTPException:
         raise
@@ -216,26 +259,47 @@ async def get_current_user_info(
     }
 
 
+@router.post("/logout")
+async def logout(
+    token: str = Depends(oauth2_scheme)
+):
+    """用户登出 - 使token失效"""
+    token_cache = get_token_cache()
+    if token_cache:
+        await token_cache.invalidate_token(token)
+        logger.info("User logged out, token invalidated")
+        return {"message": "Logged out successfully"}
+    else:
+        # 如果Redis不可用，仍然返回成功（前端会删除token）
+        logger.warning("Logout: Redis not available, token not cached")
+        return {"message": "Logged out (Redis unavailable)"}
+
+
 @router.put("/me/password")
 async def change_password(
-    old_password: str,
-    new_password: str,
+    password_data: PasswordChange,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """修改密码"""
+    """修改密码 - 失效所有现有token"""
     try:
         # 验证旧密码
-        if not verify_password(old_password, current_user.hashed_password):
+        if not verify_password(password_data.old_password, current_user.hashed_password):
             raise HTTPException(status_code=400, detail="Incorrect password")
 
         # 更新密码
-        current_user.hashed_password = get_password_hash(new_password)
+        current_user.hashed_password = get_password_hash(password_data.new_password)
         await db.commit()
 
-        logger.info(f"User {current_user.username} changed password")
+        # 失效该用户的所有token
+        token_cache = get_token_cache()
+        if token_cache:
+            await token_cache.invalidate_user_tokens(current_user.id)
+            logger.info(f"User {current_user.username} changed password, all tokens invalidated")
+        else:
+            logger.info(f"User {current_user.username} changed password")
 
-        return {"message": "Password updated successfully"}
+        return {"message": "Password updated successfully. Please login again."}
 
     except HTTPException:
         raise

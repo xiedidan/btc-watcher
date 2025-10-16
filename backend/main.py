@@ -10,10 +10,14 @@ import time
 
 from config import settings
 from database.session import engine, Base
-from api.v1 import system, strategies, signals, auth, monitoring, notifications
+from api.v1 import system, strategies, signals, auth, monitoring, notifications, websocket, proxies, settings as settings_api
 from core.freqtrade_manager import FreqTradeGatewayManager
 from services.monitoring_service import MonitoringService
 from services.notification_service import NotificationService
+from app.websocket.monitoring_broadcaster import MonitoringBroadcaster
+from core.redis_client import redis_client
+from services.token_cache import TokenCacheService
+import services.token_cache as token_cache_module
 
 # Configure logging
 logging.basicConfig(
@@ -26,6 +30,7 @@ logger = logging.getLogger(__name__)
 freqtrade_manager: FreqTradeGatewayManager = None
 monitoring_service: MonitoringService = None
 notification_service: NotificationService = None
+monitoring_broadcaster: MonitoringBroadcaster = None
 
 
 @asynccontextmanager
@@ -48,8 +53,9 @@ async def lifespan(app: FastAPI):
     # Initialize FreqTrade manager
     try:
         freqtrade_manager = FreqTradeGatewayManager()
-        # 将manager注入到strategies模块
+        # 将manager注入到strategies和system模块
         strategies._ft_manager = freqtrade_manager
+        system._ft_manager = freqtrade_manager
         logger.info("FreqTrade Gateway Manager initialized")
     except Exception as e:
         logger.error(f"Failed to initialize FreqTrade manager: {e}")
@@ -74,7 +80,35 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize notification service: {e}")
 
-    # TODO: Connect to Redis
+    # Initialize monitoring broadcaster
+    try:
+        monitoring_broadcaster = MonitoringBroadcaster(monitoring_service)
+        await monitoring_broadcaster.start()
+        # 将broadcaster注入到websocket模块
+        import app.websocket.monitoring_broadcaster as mb_module
+        mb_module.broadcaster = monitoring_broadcaster
+        logger.info("Monitoring broadcaster initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize monitoring broadcaster: {e}")
+
+    # Initialize Redis connection
+    try:
+        await redis_client.connect()
+        logger.info("✅ Redis client initialized")
+    except Exception as e:
+        logger.warning(f"⚠️ Redis initialization failed: {e}")
+        logger.warning("Token caching will be disabled")
+
+    # Initialize Token Cache service
+    try:
+        if redis_client.is_connected():
+            token_cache_service = TokenCacheService(redis_client)
+            token_cache_module.token_cache_service = token_cache_service
+            logger.info("✅ Token cache service initialized")
+        else:
+            logger.warning("Token cache service not initialized (Redis unavailable)")
+    except Exception as e:
+        logger.error(f"Failed to initialize token cache service: {e}")
 
     logger.info("Application startup complete")
 
@@ -82,6 +116,14 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down application...")
+
+    # Stop monitoring broadcaster
+    if monitoring_broadcaster:
+        try:
+            await monitoring_broadcaster.stop()
+            logger.info("Monitoring broadcaster stopped")
+        except Exception as e:
+            logger.error(f"Failed to stop monitoring broadcaster: {e}")
 
     # Stop monitoring service
     if monitoring_service:
@@ -107,8 +149,19 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to stop strategies: {e}")
 
-    # TODO: Close database connections
-    # TODO: Close Redis connections
+    # Close Redis connection
+    try:
+        await redis_client.disconnect()
+        logger.info("Redis connection closed")
+    except Exception as e:
+        logger.error(f"Failed to close Redis connection: {e}")
+
+    # Close database connections
+    try:
+        await engine.dispose()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.error(f"Failed to close database connections: {e}")
 
     logger.info("Application shutdown complete")
 
@@ -226,6 +279,24 @@ app.include_router(
     notifications.router,
     prefix="/api/v1/notifications",
     tags=["notifications"]
+)
+
+app.include_router(
+    proxies.router,
+    prefix="/api/v1/proxies",
+    tags=["proxies"]
+)
+
+app.include_router(
+    settings_api.router,
+    prefix="/api/v1/settings",
+    tags=["settings"]
+)
+
+app.include_router(
+    websocket.router,
+    prefix="/api/v1",
+    tags=["websocket"]
 )
 
 

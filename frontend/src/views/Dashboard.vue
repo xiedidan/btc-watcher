@@ -1,7 +1,7 @@
 <template>
   <div class="dashboard">
     <!-- 统计卡片 -->
-    <el-row :gutter="20" class="stats-row">
+    <el-row :gutter="6" class="stats-row">
       <el-col :span="6">
         <el-card class="stat-card">
           <div class="stat-content">
@@ -52,7 +52,12 @@
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ capacity.utilization_percent?.toFixed(1) || 0 }}%</div>
-              <div class="stat-label">容量使用率</div>
+              <div class="stat-label">
+                策略容量
+                <el-tooltip placement="top" content="当前运行策略数占最大并发数的比例">
+                  <el-icon style="font-size: 10px; margin-left: 2px; cursor: help"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
             </div>
           </div>
         </el-card>
@@ -60,20 +65,43 @@
     </el-row>
 
     <!-- 图表区域 -->
-    <el-row :gutter="20" class="charts-row">
+    <el-row :gutter="6" class="charts-row">
       <el-col :span="16">
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>容量使用趋势</span>
-              <el-radio-group v-model="trendPeriod" size="small" @change="fetchCapacityTrend">
-                <el-radio-button :label="24">24小时</el-radio-button>
-                <el-radio-button :label="72">3天</el-radio-button>
-                <el-radio-button :label="168">7天</el-radio-button>
-              </el-radio-group>
+              <div>
+                <span style="font-weight: 600">信号趋势</span>
+                <el-tooltip placement="top">
+                  <template #content>
+                    <div style="max-width: 250px">
+                      <div><strong>信号统计：</strong></div>
+                      <div>实时监控交易信号的生成趋势</div>
+                      <div style="margin-top: 8px">
+                        <span style="color: #67C23A">● </span>强信号：{{ signalStats.strong_signals || 0 }} 个<br>
+                        <span style="color: #E6A23C">● </span>中等信号：{{ signalStats.medium_signals || 0 }} 个<br>
+                        <span style="color: #909399">● </span>弱信号：{{ signalStats.weak_signals || 0 }} 个
+                      </div>
+                    </div>
+                  </template>
+                  <el-icon style="margin-left: 6px; cursor: help; color: #909399"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center">
+                <el-select v-model="signalGroupBy" size="small" style="width: 120px" @change="fetchSignalTrend">
+                  <el-option label="按货币对" value="pair" />
+                  <el-option label="按策略" value="strategy" />
+                  <el-option label="总体" value="all" />
+                </el-select>
+                <el-radio-group v-model="trendPeriod" size="small" @change="fetchSignalTrend">
+                  <el-radio-button :label="24">24小时</el-radio-button>
+                  <el-radio-button :label="72">3天</el-radio-button>
+                  <el-radio-button :label="168">7天</el-radio-button>
+                </el-radio-group>
+              </div>
             </div>
           </template>
-          <v-chart :option="capacityTrendOption" style="height: 300px" />
+          <v-chart :option="signalTrendOption" style="height: 220px" />
         </el-card>
       </el-col>
 
@@ -82,7 +110,7 @@
           <template #header>
             <span>信号分布</span>
           </template>
-          <v-chart :option="signalDistributionOption" style="height: 300px" />
+          <v-chart :option="signalDistributionOption" style="height: 220px" />
         </el-card>
       </el-col>
     </el-row>
@@ -92,7 +120,8 @@
       <template #header>
         <div class="card-header">
           <span>运行中的策略</span>
-          <el-button type="primary" size="small" @click="$router.push('/strategies')">
+          <el-button type="primary" @click="$router.push('/strategies')">
+            <el-icon style="margin-right: 4px"><Operation /></el-icon>
             管理策略
           </el-button>
         </div>
@@ -119,6 +148,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useStrategyStore } from '@/stores/strategy'
 import { useSystemStore } from '@/stores/system'
 import { signalAPI } from '@/api'
+import { Operation, Check, Notification, Odometer, QuestionFilled } from '@element-plus/icons-vue'
 
 const strategyStore = useStrategyStore()
 const systemStore = useSystemStore()
@@ -128,12 +158,24 @@ const capacity = ref({})
 const signalStats = ref({})
 const runningStrategies = ref([])
 const trendPeriod = ref(24)
+const signalGroupBy = ref('all')
 
-const capacityTrendOption = ref({
+const signalTrendOption = ref({
   title: { text: '' },
   tooltip: {
     trigger: 'axis',
-    formatter: '{b}<br/>使用率: {c}%'
+    formatter: (params) => {
+      let result = `${params[0].name}<br/>`
+      params.forEach(item => {
+        result += `<span style="color: ${item.color}">● </span>${item.seriesName}: ${item.value} 个<br/>`
+      })
+      return result
+    }
+  },
+  legend: {
+    data: ['强信号', '中等信号', '弱信号'],
+    bottom: '0%',
+    left: 'center'
   },
   xAxis: {
     type: 'category',
@@ -141,21 +183,41 @@ const capacityTrendOption = ref({
   },
   yAxis: {
     type: 'value',
-    name: '使用率 (%)',
-    min: 0,
-    max: 100
+    name: '信号数量',
+    minInterval: 1
   },
-  series: [{
-    data: [],
-    type: 'line',
-    smooth: true,
-    areaStyle: {
-      color: 'rgba(64, 158, 255, 0.2)'
+  grid: {
+    left: '3%',
+    right: '4%',
+    bottom: '10%',
+    containLabel: true
+  },
+  series: [
+    {
+      name: '强信号',
+      data: [],
+      type: 'line',
+      smooth: true,
+      lineStyle: { color: '#67C23A', width: 2 },
+      itemStyle: { color: '#67C23A' }
     },
-    lineStyle: {
-      color: '#409EFF'
+    {
+      name: '中等信号',
+      data: [],
+      type: 'line',
+      smooth: true,
+      lineStyle: { color: '#E6A23C', width: 2 },
+      itemStyle: { color: '#E6A23C' }
+    },
+    {
+      name: '弱信号',
+      data: [],
+      type: 'line',
+      smooth: true,
+      lineStyle: { color: '#909399', width: 2 },
+      itemStyle: { color: '#909399' }
     }
-  }]
+  ]
 })
 
 const signalDistributionOption = ref({
@@ -220,26 +282,35 @@ const fetchDashboardData = async () => {
   }
 }
 
-const fetchCapacityTrend = async () => {
+const fetchSignalTrend = async () => {
   try {
-    const trendData = await systemStore.fetchCapacityTrend(trendPeriod.value)
-
-    capacityTrendOption.value.xAxis.data = trendData.data_points.map(d => {
-      const date = new Date(d.timestamp)
-      return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    const trendData = await signalAPI.trend({
+      hours: trendPeriod.value,
+      group_by: signalGroupBy.value
     })
 
-    capacityTrendOption.value.series[0].data = trendData.data_points.map(d =>
-      d.utilization_percent.toFixed(2)
-    )
+    // Extract time labels
+    signalTrendOption.value.xAxis.data = trendData.data_points.map(d => {
+      const date = new Date(d.timestamp)
+      if (trendPeriod.value === 24) {
+        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      } else {
+        return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+      }
+    })
+
+    // Extract signal counts for each series
+    signalTrendOption.value.series[0].data = trendData.data_points.map(d => d.strong_signals || 0)
+    signalTrendOption.value.series[1].data = trendData.data_points.map(d => d.medium_signals || 0)
+    signalTrendOption.value.series[2].data = trendData.data_points.map(d => d.weak_signals || 0)
   } catch (error) {
-    console.error('Failed to fetch capacity trend:', error)
+    console.error('Failed to fetch signal trend:', error)
   }
 }
 
 onMounted(() => {
   fetchDashboardData()
-  fetchCapacityTrend()
+  fetchSignalTrend()
 
   // 每30秒刷新一次
   refreshTimer = setInterval(fetchDashboardData, 30000)
@@ -258,7 +329,7 @@ onUnmounted(() => {
 }
 
 .stats-row {
-  margin-bottom: 20px;
+  margin-bottom: 6px;
 }
 
 .stat-card {
@@ -267,25 +338,25 @@ onUnmounted(() => {
 }
 
 .stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .stat-content {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
 }
 
 .stat-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 28px;
+  font-size: 20px;
 }
 
 .stat-info {
@@ -293,20 +364,20 @@ onUnmounted(() => {
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: bold;
   color: #303133;
   line-height: 1;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .stat-label {
-  font-size: 14px;
+  font-size: 12px;
   color: #909399;
 }
 
 .charts-row {
-  margin-bottom: 20px;
+  margin-bottom: 6px;
 }
 
 .card-header {
@@ -316,6 +387,6 @@ onUnmounted(() => {
 }
 
 .strategies-card {
-  margin-top: 20px;
+  margin-top: 6px;
 }
 </style>

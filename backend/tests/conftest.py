@@ -56,14 +56,16 @@ def db_session(engine):
 def sample_user(db_session):
     """创建测试用户"""
     from models.user import User
-    from passlib.context import CryptContext
+    import bcrypt
 
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    # 使用短密码并直接使用bcrypt（避免passlib版本兼容问题）
+    password = b"test123"
+    hashed = bcrypt.hashpw(password, bcrypt.gensalt()).decode('utf-8')
 
     user = User(
         username="testuser",
         email="test@example.com",
-        hashed_password=pwd_context.hash("testpass123"),
+        hashed_password=hashed,
         is_active=True,
         is_superuser=False
     )
@@ -109,7 +111,7 @@ def mock_freqtrade_manager():
     manager.port_pool = set(range(8081, 9081))
     manager.base_port = 8081
     manager.max_port = 9080
-    manager.max_strategies = 999
+    manager.max_strategies = 1000
 
     return manager
 
@@ -146,3 +148,63 @@ def temp_freqtrade_paths(tmp_path, monkeypatch):
         "logs_path": logs_path,
         "gateway_routes_path": gateway_routes_path
     }
+
+@pytest.fixture(autouse=True, scope="session")
+def setup_api_dependencies():
+    """Setup API dependencies for tests"""
+    from unittest.mock import Mock
+    from api.v1 import system, strategies, monitoring, notifications
+    from core.freqtrade_manager import FreqTradeGatewayManager
+
+    # Create mock manager
+    mock_manager = Mock(spec=FreqTradeGatewayManager)
+    mock_manager.get_capacity_info.return_value = {
+        "max_strategies": 1000,
+        "running_strategies": 0,
+        "available_slots": 1000,
+        "utilization_percent": 0.0,
+        "port_range": "8081-9080",
+        "can_start_more": True,
+        "architecture": "multi_instance_reverse_proxy"
+    }
+    mock_manager.get_port_pool_status.return_value = {
+        "total_ports": 1000,
+        "available_ports": 1000,
+        "allocated_ports": 0,
+        "running_strategies": 0,
+        "port_range": "8081-9080",
+        "max_concurrent": 1000
+    }
+
+    # Create mock monitoring service
+    mock_monitoring = Mock()
+    mock_monitoring.get_health_status.return_value = {
+        "status": "healthy",
+        "architecture": "multi_instance_reverse_proxy",
+        "services": {}
+    }
+    mock_monitoring.get_system_metrics.return_value = {
+        "cpu": {"percent": 10.0},
+        "memory": {"percent": 50.0},
+        "disk": {"percent": 30.0}
+    }
+
+    # Create mock notification service
+    mock_notification = Mock()
+
+    # Inject mocks into modules
+    system._ft_manager = mock_manager
+    system._monitoring_service = mock_monitoring
+    strategies._ft_manager = mock_manager
+    monitoring._monitoring_service = mock_monitoring
+    notifications._notification_service = mock_notification
+
+    yield
+
+    # Cleanup
+    system._ft_manager = None
+    system._monitoring_service = None
+    strategies._ft_manager = None
+    monitoring._monitoring_service = None
+    notifications._notification_service = None
+

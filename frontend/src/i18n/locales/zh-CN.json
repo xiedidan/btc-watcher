@@ -1,0 +1,127 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "创建",
+    "search": "搜索",
+    "filter": "筛选",
+    "refresh": "刷新",
+    "export": "导出",
+    "import": "导入",
+    "confirm": "确认",
+    "close": "关闭",
+    "detail": "详情",
+    "back": "返回",
+    "more": "更多",
+    "loading": "加载中...",
+    "noData": "暂无数据",
+    "success": "操作成功",
+    "error": "操作失败",
+    "yes": "是",
+    "no": "否",
+    "home": "首页"
+  },
+  "auth": {
+    "login": "登录",
+    "logout": "退出登录",
+    "username": "用户名",
+    "password": "密码",
+    "usernameRequired": "请输入用户名",
+    "passwordRequired": "请输入密码",
+    "loginSuccess": "登录成功",
+    "loginFailed": "登录失败，请检查用户名和密码",
+    "logoutConfirm": "确定要退出登录吗？"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "strategies": "策略管理",
+    "signals": "信号列表",
+    "proxies": "代理管理",
+    "monitoring": "系统监控",
+    "settings": "系统设置"
+  },
+  "theme": {
+    "switchToLight": "切换到亮色主题",
+    "switchToDark": "切换到暗色主题"
+  },
+  "user": {
+    "profile": "个人资料",
+    "changePassword": "修改密码",
+    "profileComingSoon": "个人资料功能开发中，敬请期待",
+    "changePasswordComingSoon": "修改密码功能开发中，敬请期待"
+  },
+  "language": {
+    "switchSuccess": "语言已切换为中文"
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "runningStrategies": "运行中的策略",
+    "todaySignals": "今日信号",
+    "strategyCapacity": "策略容量",
+    "systemLoad": "系统负载",
+    "signalTrend": "信号趋势",
+    "signalDistribution": "信号分布",
+    "byPair": "按货币对",
+    "byStrategy": "按策略"
+  },
+  "strategy": {
+    "title": "策略管理",
+    "create": "创建策略",
+    "edit": "编辑策略",
+    "delete": "删除策略",
+    "start": "启动策略",
+    "stop": "停止策略",
+    "restart": "重启策略",
+    "name": "策略名称",
+    "status": "状态",
+    "running": "运行中",
+    "stopped": "已停止",
+    "error": "错误"
+  },
+  "signal": {
+    "title": "信号列表",
+    "type": "信号类型",
+    "buy": "买入",
+    "sell": "卖出",
+    "strength": "信号强度",
+    "price": "价格",
+    "time": "时间",
+    "strategy": "策略",
+    "pair": "交易对"
+  },
+  "proxy": {
+    "title": "代理管理",
+    "create": "添加代理",
+    "edit": "编辑代理",
+    "delete": "删除代理",
+    "test": "测试连接",
+    "name": "代理名称",
+    "type": "代理类型",
+    "host": "主机地址",
+    "port": "端口",
+    "status": "状态",
+    "enabled": "已启用",
+    "disabled": "已禁用"
+  },
+  "settings": {
+    "title": "系统设置",
+    "save": "保存设置",
+    "channels": "通知渠道",
+    "notifications": "通知设置",
+    "websocket": "WebSocket设置",
+    "display": "显示设置",
+    "account": "账户设置",
+    "advanced": "高级设置",
+    "about": "关于",
+    "saveSuccess": "设置已保存",
+    "saveFailed": "保存设置失败"
+  },
+  "pagination": {
+    "total": "共 {total} 条",
+    "pageSize": "每页 {size} 条",
+    "goto": "跳转",
+    "page": "页"
+  }
+}

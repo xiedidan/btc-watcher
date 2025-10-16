@@ -25,12 +25,12 @@ def freqtrade_manager(tmp_path, monkeypatch):
         self.freqtrade_version = "2025.8"
         self.gateway_port = 8080
         self.base_port = 8081
-        self.max_port = 9079  # 8081 + 999 - 1 = 9079 (999 ports total)
-        self.max_strategies = 999
+        self.max_port = 9080  # 8081 to 9080 = 1000 ports total
+        self.max_strategies = 1000
         self.base_config_path = base_config_path
         self.strategies_path = strategies_path
         self.logs_path = logs_path
-        self.port_pool = set(range(self.base_port, self.base_port + self.max_strategies))  # 999 ports
+        self.port_pool = set(range(self.base_port, self.max_port + 1))  # 1000 ports
 
         # 确保目录存在
         self.base_config_path.mkdir(parents=True, exist_ok=True)
@@ -50,9 +50,9 @@ class TestFreqTradeGatewayManager:
         manager = freqtrade_manager
 
         assert manager.base_port == 8081
-        assert manager.max_port == 9079  # 999 ports: 8081-9079
-        assert manager.max_strategies == 999
-        assert len(manager.port_pool) == 999
+        assert manager.max_port == 9080  # 1000 ports: 8081-9080
+        assert manager.max_strategies == 1000
+        assert len(manager.port_pool) == 1000
         assert manager.strategy_processes == {}
         assert manager.strategy_ports == {}
 
@@ -87,10 +87,10 @@ class TestFreqTradeGatewayManager:
         manager = freqtrade_manager
 
         # 模拟已达到最大策略数
-        manager.strategy_processes = {i: Mock() for i in range(999)}
+        manager.strategy_processes = {i: Mock() for i in range(1000)}
 
         with pytest.raises(Exception) as exc_info:
-            await manager._allocate_port(1000)
+            await manager._allocate_port(1001)
 
         assert "Maximum concurrent strategies limit" in str(exc_info.value)
 
@@ -103,21 +103,21 @@ class TestFreqTradeGatewayManager:
 
         capacity = manager.get_capacity_info()
 
-        assert capacity["max_strategies"] == 999
+        assert capacity["max_strategies"] == 1000
         assert capacity["running_strategies"] == 3
         # available_slots 是基于 port_pool 大小，不是 max - running
-        assert capacity["available_slots"] == 999  # 端口池仍然是满的
+        assert capacity["available_slots"] == 1000  # 端口池仍然是满的
 
     def test_port_pool_integrity(self, freqtrade_manager):
         """测试端口池完整性"""
         manager = freqtrade_manager
 
         # 验证端口池包含所有端口
-        expected_ports = set(range(8081, 9080))  # 999 ports: 8081-9079
+        expected_ports = set(range(8081, 9081))  # 1000 ports: 8081-9080
         assert manager.port_pool == expected_ports
 
         # 验证端口数量
-        assert len(manager.port_pool) == 999
+        assert len(manager.port_pool) == 1000
 
     @pytest.mark.asyncio
     async def test_concurrent_port_allocation(self, freqtrade_manager):
@@ -135,7 +135,7 @@ class TestFreqTradeGatewayManager:
 
         # 验证端口都在有效范围内
         for port in allocated_ports:
-            assert 8081 <= port <= 9079  # Updated range
+            assert 8081 <= port <= 9080  # 1000 ports range
 
     def test_strategy_tracking(self, freqtrade_manager):
         """测试策略跟踪"""
@@ -168,19 +168,19 @@ class TestFreqTradeManagerEdgeCases:
 
         allocated_ports = []
 
-        # 分配所有999个端口
-        for i in range(999):
+        # 分配所有1000个端口
+        for i in range(1000):
             port = await manager._allocate_port(i)
             allocated_ports.append(port)
             manager.strategy_processes[i] = Mock()  # 分配后再添加进程
 
         # 验证所有端口都已分配
         assert len(manager.port_pool) == 0
-        assert len(allocated_ports) == 999
+        assert len(allocated_ports) == 1000
 
         # 尝试再分配一个应该失败（端口池已空）
         with pytest.raises(Exception):
-            await manager._allocate_port(999)
+            await manager._allocate_port(1000)
 
     @pytest.mark.asyncio
     async def test_port_allocation_order(self, freqtrade_manager):

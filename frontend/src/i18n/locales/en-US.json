@@ -1,0 +1,127 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "filter": "Filter",
+    "refresh": "Refresh",
+    "export": "Export",
+    "import": "Import",
+    "confirm": "Confirm",
+    "close": "Close",
+    "detail": "Detail",
+    "back": "Back",
+    "more": "More",
+    "loading": "Loading...",
+    "noData": "No data",
+    "success": "Success",
+    "error": "Error",
+    "yes": "Yes",
+    "no": "No",
+    "home": "Home"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "username": "Username",
+    "password": "Password",
+    "usernameRequired": "Please enter username",
+    "passwordRequired": "Please enter password",
+    "loginSuccess": "Login successful",
+    "loginFailed": "Login failed, please check your credentials",
+    "logoutConfirm": "Are you sure you want to logout?"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "strategies": "Strategies",
+    "signals": "Signals",
+    "proxies": "Proxies",
+    "monitoring": "Monitoring",
+    "settings": "Settings"
+  },
+  "theme": {
+    "switchToLight": "Switch to light theme",
+    "switchToDark": "Switch to dark theme"
+  },
+  "user": {
+    "profile": "Profile",
+    "changePassword": "Change Password",
+    "profileComingSoon": "Profile feature coming soon",
+    "changePasswordComingSoon": "Change password feature coming soon"
+  },
+  "language": {
+    "switchSuccess": "Language switched to English"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "runningStrategies": "Running Strategies",
+    "todaySignals": "Today's Signals",
+    "strategyCapacity": "Strategy Capacity",
+    "systemLoad": "System Load",
+    "signalTrend": "Signal Trend",
+    "signalDistribution": "Signal Distribution",
+    "byPair": "By Pair",
+    "byStrategy": "By Strategy"
+  },
+  "strategy": {
+    "title": "Strategy Management",
+    "create": "Create Strategy",
+    "edit": "Edit Strategy",
+    "delete": "Delete Strategy",
+    "start": "Start Strategy",
+    "stop": "Stop Strategy",
+    "restart": "Restart Strategy",
+    "name": "Strategy Name",
+    "status": "Status",
+    "running": "Running",
+    "stopped": "Stopped",
+    "error": "Error"
+  },
+  "signal": {
+    "title": "Signal List",
+    "type": "Signal Type",
+    "buy": "Buy",
+    "sell": "Sell",
+    "strength": "Strength",
+    "price": "Price",
+    "time": "Time",
+    "strategy": "Strategy",
+    "pair": "Trading Pair"
+  },
+  "proxy": {
+    "title": "Proxy Management",
+    "create": "Add Proxy",
+    "edit": "Edit Proxy",
+    "delete": "Delete Proxy",
+    "test": "Test Connection",
+    "name": "Proxy Name",
+    "type": "Proxy Type",
+    "host": "Host",
+    "port": "Port",
+    "status": "Status",
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "settings": {
+    "title": "Settings",
+    "save": "Save Settings",
+    "channels": "Notification Channels",
+    "notifications": "Notifications",
+    "websocket": "WebSocket Settings",
+    "display": "Display Settings",
+    "account": "Account Settings",
+    "advanced": "Advanced Settings",
+    "about": "About",
+    "saveSuccess": "Settings saved successfully",
+    "saveFailed": "Failed to save settings"
+  },
+  "pagination": {
+    "total": "Total {total} items",
+    "pageSize": "{size} per page",
+    "goto": "Go to",
+    "page": "page"
+  }
+}

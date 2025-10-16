@@ -26,11 +26,14 @@ request.interceptors.request.use(
 // 响应拦截器
 request.interceptors.response.use(
   response => {
+    console.log('[API] Response received:', response.config.url, response.status)
     return response.data
   },
   error => {
+    console.error('[API] Request error:', error)
     if (error.response) {
       const { status, data } = error.response
+      console.error('[API] Error response:', status, data)
 
       switch (status) {
         case 401:
@@ -52,6 +55,7 @@ request.interceptors.response.use(
           ElMessage.error(data.detail || '请求失败')
       }
     } else {
+      console.error('[API] Network error:', error.message)
       ElMessage.error('网络错误，请检查您的网络连接')
     }
 

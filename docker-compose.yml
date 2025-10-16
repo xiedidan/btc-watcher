@@ -72,15 +72,14 @@ services:
 
   # PostgreSQL数据库
   db:
-    image: postgres:15-alpine
+    image: postgres:latest
     environment:
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_INITDB_ARGS="--encoding=UTF8 --locale=C"
+      - POSTGRES_DB=${POSTGRES_DB:-btc_watcher}
+      - POSTGRES_USER=${POSTGRES_USER:-btc_watcher}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-btc_watcher_password}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF8
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - btc_watcher_postgres:/var/lib/postgresql/data
     ports:
       - "5432:5432"  # 开发时可以直接连接数据库
     restart: unless-stopped
@@ -89,10 +88,8 @@ services:
 
   # Redis缓存和消息队列
   redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    image: redis:latest
+    command: redis-server --appendonly yes
     volumes:
       - ./data/redis:/data
     ports:
@@ -136,5 +133,5 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  btc_watcher_postgres:
   redis_data:

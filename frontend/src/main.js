@@ -2,11 +2,35 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import './styles/theme.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import ECharts from 'vue-echarts'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { LineChart, PieChart } from 'echarts/charts'
+import {
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent
+} from 'echarts/components'
+import i18n from './i18n'
+import zhCnElementLocale from 'element-plus/dist/locale/zh-cn.mjs'
+import enElementLocale from 'element-plus/dist/locale/en.mjs'
 
 import App from './App.vue'
 import router from './router'
+
+// 注册ECharts必需组件
+use([
+  CanvasRenderer,
+  LineChart,
+  PieChart,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent
+])
 
 const app = createApp(App)
 
@@ -16,8 +40,19 @@ app.use(createPinia())
 // Vue Router
 app.use(router)
 
-// Element Plus
-app.use(ElementPlus)
+// i18n国际化
+app.use(i18n)
+
+// Element Plus with locale
+// 动态选择Element Plus的locale
+const getElementPlusLocale = () => {
+  const locale = localStorage.getItem('locale') || 'zh-CN'
+  return locale === 'en-US' ? enElementLocale : zhCnElementLocale
+}
+
+app.use(ElementPlus, {
+  locale: getElementPlusLocale()
+})
 
 // 注册所有Element Plus图标
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {

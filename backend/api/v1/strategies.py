@@ -2,11 +2,14 @@
 Strategies API endpoints
 管理交易策略的创建、启动、停止、查询等
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
 import logging
+import ast
+import tempfile
+from pathlib import Path
 
 from database import get_db
 from models.strategy import Strategy
@@ -65,6 +68,50 @@ async def list_strategies(
         }
     except Exception as e:
         logger.error(f"Failed to list strategies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/overview")
+async def get_strategies_overview(
+    db: AsyncSession = Depends(get_db),
+    ft_manager: FreqTradeGatewayManager = Depends(get_ft_manager)
+):
+    """获取策略概览"""
+    try:
+        # 获取数据库中的策略统计
+        result = await db.execute(select(Strategy))
+        all_strategies = result.scalars().all()
+
+        total_strategies = len(all_strategies)
+        running_strategies = len([s for s in all_strategies if s.status == "running"])
+        stopped_strategies = len([s for s in all_strategies if s.status == "stopped"])
+
+        # 获取系统容量信息
+        capacity_info = ft_manager.get_capacity_info()
+
+        return {
+            "summary": {
+                "total_strategies": total_strategies,
+                "running_strategies": running_strategies,
+                "stopped_strategies": stopped_strategies,
+                "capacity_utilization": capacity_info["utilization_percent"],
+                "available_slots": capacity_info["available_slots"]
+            },
+            "capacity": capacity_info,
+            "strategies": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "status": s.status,
+                    "exchange": s.exchange,
+                    "port": s.port,
+                    "started_at": s.started_at.isoformat() if s.started_at else None
+                }
+                for s in all_strategies if s.is_active
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to get strategies overview: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -326,44 +373,116 @@ async def delete_strategy(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/overview")
-async def get_strategies_overview(
-    db: AsyncSession = Depends(get_db),
+@router.post("/upload")
+async def upload_strategy_file(
+    file: UploadFile = File(...),
     ft_manager: FreqTradeGatewayManager = Depends(get_ft_manager)
 ):
-    """获取策略概览"""
+    """
+    上传策略文件并扫描可用的策略类
+    Upload strategy file and scan for available strategy classes
+    """
     try:
-        # 获取数据库中的策略统计
-        result = await db.execute(select(Strategy))
-        all_strategies = result.scalars().all()
+        # 1. 验证文件类型
+        if not file.filename.endswith('.py'):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only .py files are accepted"
+            )
 
-        total_strategies = len(all_strategies)
-        running_strategies = len([s for s in all_strategies if s.status == "running"])
-        stopped_strategies = len([s for s in all_strategies if s.status == "stopped"])
+        # 2. 验证文件大小 (限制为1MB)
+        content = await file.read()
+        if len(content) > 1024 * 1024:
+            raise HTTPException(
+                status_code=400,
+                detail="File too large. Maximum size is 1MB"
+            )
 
-        # 获取系统容量信息
-        capacity_info = ft_manager.get_capacity_info()
+        # 3. 保存文件到临时目录
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.py', delete=False) as tmp_file:
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+
+        # 4. 使用AST解析Python代码
+        try:
+            with open(tmp_path, 'r', encoding='utf-8') as f:
+                file_content = f.read()
+
+            tree = ast.parse(file_content, filename=file.filename)
+        except SyntaxError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid Python syntax: {str(e)}"
+            )
+
+        # 5. 扫描策略类（查找继承自IStrategy的类）
+        strategy_classes = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                # 检查是否继承自IStrategy或其他策略基类
+                inherits_from_strategy = False
+                base_classes = []
+
+                for base in node.bases:
+                    if isinstance(base, ast.Name):
+                        base_name = base.id
+                        base_classes.append(base_name)
+                        # 检查常见的策略基类名称
+                        if base_name in ['IStrategy', 'Strategy', 'StrategyBase']:
+                            inherits_from_strategy = True
+
+                # 如果找到策略类，提取信息
+                if inherits_from_strategy or len(node.bases) > 0:
+                    # 提取docstring
+                    docstring = ast.get_docstring(node) or "No description available"
+
+                    # 提取类方法
+                    methods = [
+                        item.name for item in node.body
+                        if isinstance(item, ast.FunctionDef)
+                    ]
+
+                    strategy_classes.append({
+                        "class_name": node.name,
+                        "description": docstring.split('\n')[0][:200],  # 取第一行，限制200字符
+                        "base_classes": base_classes,
+                        "methods": methods,
+                        "has_populate_indicators": "populate_indicators" in methods,
+                        "has_populate_entry": "populate_entry_trend" in methods or "populate_buy_trend" in methods,
+                        "has_populate_exit": "populate_exit_trend" in methods or "populate_sell_trend" in methods,
+                        "is_valid_strategy": inherits_from_strategy
+                    })
+
+        # 6. 如果文件有效，保存到策略目录
+        if strategy_classes:
+            strategies_path = ft_manager.strategies_path
+            target_path = strategies_path / file.filename
+
+            # 检查文件是否已存在
+            if target_path.exists():
+                logger.warning(f"Strategy file {file.filename} already exists, will be overwritten")
+
+            # 复制文件到策略目录
+            with open(target_path, 'wb') as f:
+                f.write(content)
+
+            logger.info(f"Uploaded strategy file {file.filename} with {len(strategy_classes)} classes")
+
+        # 7. 清理临时文件
+        Path(tmp_path).unlink(missing_ok=True)
 
         return {
-            "summary": {
-                "total_strategies": total_strategies,
-                "running_strategies": running_strategies,
-                "stopped_strategies": stopped_strategies,
-                "capacity_utilization": capacity_info["utilization_percent"],
-                "available_slots": capacity_info["available_slots"]
-            },
-            "capacity": capacity_info,
-            "strategies": [
-                {
-                    "id": s.id,
-                    "name": s.name,
-                    "status": s.status,
-                    "exchange": s.exchange,
-                    "port": s.port
-                }
-                for s in all_strategies if s.is_active
-            ]
+            "filename": file.filename,
+            "size_bytes": len(content),
+            "strategy_classes": strategy_classes,
+            "total_classes": len(strategy_classes),
+            "valid_strategies": len([s for s in strategy_classes if s["is_valid_strategy"]]),
+            "message": f"File uploaded successfully. Found {len(strategy_classes)} strategy classe(s)."
         }
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to get strategies overview: {e}", exc_info=True)
+        logger.error(f"Failed to upload strategy file: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

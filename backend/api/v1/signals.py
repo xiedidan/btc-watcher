@@ -108,7 +108,7 @@ async def get_signal(
             "profit_abs": signal.profit_abs,
             "trade_duration": signal.trade_duration,
             "indicators": signal.indicators,
-            "metadata": signal.metadata,
+            "metadata": signal.signal_metadata,
             "notes": signal.notes,
             "freqtrade_trade_id": signal.freqtrade_trade_id,
             "open_date": signal.open_date.isoformat() if signal.open_date else None,
@@ -235,3 +235,99 @@ async def get_signals_statistics(
     except Exception as e:
         logger.error(f"Failed to get signal statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/statistics/trend")
+async def get_signals_trend(
+    hours: int = 24,
+    group_by: str = "all",
+    strategy_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取信号趋势数据"""
+    try:
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+
+        query = select(Signal).where(Signal.created_at >= cutoff_time)
+        if strategy_id:
+            query = query.where(Signal.strategy_id == strategy_id)
+
+        query = query.order_by(Signal.created_at)
+
+        result = await db.execute(query)
+        signals = result.scalars().all()
+
+        # 确定时间间隔
+        if hours <= 24:
+            interval_minutes = 60  # 1小时间隔
+        elif hours <= 72:
+            interval_minutes = 180  # 3小时间隔
+        else:
+            interval_minutes = 360  # 6小时间隔
+
+        # 生成时间点
+        data_points = []
+        current_time = cutoff_time
+        end_time = datetime.now()
+
+        while current_time <= end_time:
+            next_time = current_time + timedelta(minutes=interval_minutes)
+
+            # 筛选该时间段内的信号
+            period_signals = [
+                s for s in signals
+                if current_time <= s.created_at < next_time
+            ]
+
+            # 按分组统计
+            if group_by == "all":
+                strong = len([s for s in period_signals if s.strength_level == "strong"])
+                medium = len([s for s in period_signals if s.strength_level == "medium"])
+                weak = len([s for s in period_signals if s.strength_level == "weak"])
+
+                data_points.append({
+                    "timestamp": current_time.isoformat(),
+                    "strong_signals": strong,
+                    "medium_signals": medium,
+                    "weak_signals": weak,
+                    "total_signals": len(period_signals)
+                })
+            elif group_by == "pair":
+                # 按货币对分组（这里简化为总体，可以扩展）
+                strong = len([s for s in period_signals if s.strength_level == "strong"])
+                medium = len([s for s in period_signals if s.strength_level == "medium"])
+                weak = len([s for s in period_signals if s.strength_level == "weak"])
+
+                data_points.append({
+                    "timestamp": current_time.isoformat(),
+                    "strong_signals": strong,
+                    "medium_signals": medium,
+                    "weak_signals": weak,
+                    "total_signals": len(period_signals)
+                })
+            elif group_by == "strategy":
+                # 按策略分组（这里简化为总体，可以扩展）
+                strong = len([s for s in period_signals if s.strength_level == "strong"])
+                medium = len([s for s in period_signals if s.strength_level == "medium"])
+                weak = len([s for s in period_signals if s.strength_level == "weak"])
+
+                data_points.append({
+                    "timestamp": current_time.isoformat(),
+                    "strong_signals": strong,
+                    "medium_signals": medium,
+                    "weak_signals": weak,
+                    "total_signals": len(period_signals)
+                })
+
+            current_time = next_time
+
+        return {
+            "period_hours": hours,
+            "group_by": group_by,
+            "interval_minutes": interval_minutes,
+            "data_points": data_points
+        }
+    except Exception as e:
+        logger.error(f"Failed to get signal trend: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+

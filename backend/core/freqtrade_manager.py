@@ -24,17 +24,25 @@ class FreqTradeGatewayManager:
         self.freqtrade_version = "2025.8"
         self.gateway_port = 8080  # 统一网关端口
         self.base_port = 8081  # FreqTrade实例起始端口
-        self.max_port = 9080   # FreqTrade实例最大端口 (999个端口: 8081-9080)
-        self.max_strategies = 999  # 最大并发策略数
-        self.base_config_path = Path("/app/freqtrade_configs")
-        self.strategies_path = Path("/app/user_data/strategies")
-        self.logs_path = Path("/app/logs/freqtrade")
+        self.max_port = 9080   # FreqTrade实例最大端口 (1000个端口: 8081-9080)
+        self.max_strategies = 1000  # 最大并发策略数
+
+        # 使用项目目录而不是 /app
+        project_root = Path(__file__).parent.parent
+        self.base_config_path = project_root / "freqtrade_configs"
+        self.strategies_path = project_root / "user_data" / "strategies"
+        self.logs_path = project_root / "logs" / "freqtrade"
         self.port_pool = set(range(self.base_port, self.max_port + 1))  # 可用端口池
 
         # Ensure directories exist
-        self.base_config_path.mkdir(parents=True, exist_ok=True)
-        self.strategies_path.mkdir(parents=True, exist_ok=True)
-        self.logs_path.mkdir(parents=True, exist_ok=True)
+        try:
+            self.base_config_path.mkdir(parents=True, exist_ok=True)
+            self.strategies_path.mkdir(parents=True, exist_ok=True)
+            self.logs_path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"FreqTrade directories initialized at {project_root}")
+        except Exception as e:
+            logger.warning(f"Failed to create FreqTrade directories: {e}")
+            logger.warning("FreqTrade manager will operate with reduced functionality")
 
     async def create_strategy(self, strategy_config: dict) -> bool:
         """创建并启动新策略"""
@@ -153,7 +161,7 @@ class FreqTradeGatewayManager:
         }
 
     async def _allocate_port(self, strategy_id: int) -> int:
-        """为策略分配端口 - 支持999个并发策略"""
+        """为策略分配端口 - 支持1000个并发策略"""
         # 检查是否超过最大策略数
         if len(self.strategy_processes) >= self.max_strategies:
             raise Exception(f"Maximum concurrent strategies limit ({self.max_strategies}) reached")
@@ -279,7 +287,7 @@ class FreqTradeGatewayManager:
             }
 
         # 保存路由配置供API Gateway使用
-        routes_file = Path("/app/gateway_routes.json")
+        routes_file = self.base_config_path.parent / "gateway_routes.json"
         with open(routes_file, 'w') as f:
             json.dump(routes, f, indent=2)
 

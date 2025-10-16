@@ -131,44 +131,144 @@
     <el-dialog
       v-model="showDetailDialog"
       title="信号详情"
-      width="600px"
+      width="800px"
+      destroy-on-close
     >
-      <el-descriptions :column="2" border v-if="currentSignal">
-        <el-descriptions-item label="ID">{{ currentSignal.id }}</el-descriptions-item>
-        <el-descriptions-item label="策略ID">{{ currentSignal.strategy_id }}</el-descriptions-item>
-        <el-descriptions-item label="交易对">{{ currentSignal.pair }}</el-descriptions-item>
-        <el-descriptions-item label="动作">
-          <el-tag v-if="currentSignal.action === 'buy'" type="success">买入</el-tag>
-          <el-tag v-else-if="currentSignal.action === 'sell'" type="danger">卖出</el-tag>
-          <el-tag v-else type="info">持有</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="信号强度">
-          {{ (currentSignal.signal_strength * 100).toFixed(2) }}%
-        </el-descriptions-item>
-        <el-descriptions-item label="强度等级">
-          <el-tag v-if="currentSignal.strength_level === 'strong'" type="success">强</el-tag>
-          <el-tag v-else-if="currentSignal.strength_level === 'medium'" type="warning">中</el-tag>
-          <el-tag v-else type="info">弱</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="当前价格">
-          ${{ currentSignal.current_rate?.toFixed(8) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="入场价格">
-          {{ currentSignal.entry_price ? '$' + currentSignal.entry_price.toFixed(8) : '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="盈亏比">
-          <span v-if="currentSignal.profit_ratio" :style="{ color: currentSignal.profit_ratio > 0 ? '#67C23A' : '#F56C6C' }">
-            {{ (currentSignal.profit_ratio * 100).toFixed(2) }}%
-          </span>
-          <span v-else>-</span>
-        </el-descriptions-item>
-        <el-descriptions-item label="盈亏金额">
-          {{ currentSignal.profit_abs ? '$' + currentSignal.profit_abs.toFixed(2) : '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="创建时间" :span="2">
-          {{ currentSignal.created_at }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div v-if="currentSignal">
+        <!-- 基础信息和技术指标 -->
+        <el-row :gutter="16" style="margin-bottom: 20px">
+          <el-col :span="12">
+            <el-card shadow="never" header="基础信息">
+              <el-descriptions :column="1" size="small">
+                <el-descriptions-item label="交易对">{{ currentSignal.pair }}</el-descriptions-item>
+                <el-descriptions-item label="信号类型">
+                  <el-tag v-if="currentSignal.action === 'buy'" type="success">买入 🟢</el-tag>
+                  <el-tag v-else-if="currentSignal.action === 'sell'" type="danger">卖出 🔴</el-tag>
+                  <el-tag v-else type="info">持有</el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="信号强度">
+                  <div style="display: flex; align-items: center; gap: 8px">
+                    <el-progress
+                      :percentage="currentSignal.signal_strength * 100"
+                      :color="getStrengthColor(currentSignal.signal_strength)"
+                      :stroke-width="12"
+                      :show-text="false"
+                      style="flex: 1; max-width: 100px"
+                    />
+                    <span>{{ (currentSignal.signal_strength * 100).toFixed(1) }}%</span>
+                  </div>
+                </el-descriptions-item>
+                <el-descriptions-item label="强度等级">
+                  <el-tag v-if="currentSignal.strength_level === 'strong'" type="success">强烈信号</el-tag>
+                  <el-tag v-else-if="currentSignal.strength_level === 'medium'" type="warning">中等信号</el-tag>
+                  <el-tag v-else-if="currentSignal.strength_level === 'weak'" type="info">弱信号</el-tag>
+                  <el-tag v-else>忽略</el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="触发时间">
+                  {{ currentSignal.created_at }}
+                </el-descriptions-item>
+                <el-descriptions-item label="当前价格">
+                  ${{ currentSignal.current_rate?.toFixed(8) }}
+                </el-descriptions-item>
+                <el-descriptions-item label="策略ID">
+                  {{ currentSignal.strategy_id }}
+                </el-descriptions-item>
+              </el-descriptions>
+            </el-card>
+          </el-col>
+
+          <el-col :span="12">
+            <el-card shadow="never" header="技术指标">
+              <el-descriptions :column="1" size="small">
+                <el-descriptions-item label="RSI (14)">
+                  {{ currentSignal.indicators?.rsi?.toFixed(2) || '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="MACD">
+                  {{ currentSignal.indicators?.macd ? currentSignal.indicators.macd.toFixed(4) : '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="MACD Signal">
+                  {{ currentSignal.indicators?.macd_signal ? currentSignal.indicators.macd_signal.toFixed(4) : '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="MA Fast (10)">
+                  {{ currentSignal.indicators?.ma_fast ? '$' + currentSignal.indicators.ma_fast.toFixed(2) : '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="MA Slow (20)">
+                  {{ currentSignal.indicators?.ma_slow ? '$' + currentSignal.indicators.ma_slow.toFixed(2) : '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="Volume 24h">
+                  {{ currentSignal.metadata?.volume_24h ? formatVolume(currentSignal.metadata.volume_24h) : '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="Price Change 24h">
+                  <span :style="{ color: getPriceChangeColor(currentSignal.metadata?.price_change_24h) }">
+                    {{ currentSignal.metadata?.price_change_24h ? (currentSignal.metadata.price_change_24h > 0 ? '+' : '') + currentSignal.metadata.price_change_24h.toFixed(2) + '%' : '-' }}
+                  </span>
+                </el-descriptions-item>
+              </el-descriptions>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <!-- 信号触发逻辑 -->
+        <el-card shadow="never" header="信号触发逻辑" style="margin-bottom: 20px" v-if="currentSignal.trigger_logic">
+          <div style="padding-left: 16px">
+            <div v-for="(logic, index) in currentSignal.trigger_logic" :key="index" style="margin-bottom: 8px">
+              <el-icon color="#67C23A"><Check /></el-icon>
+              <span style="margin-left: 8px; color: #606266">{{ logic }}</span>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 通知状态 -->
+        <el-card shadow="never" header="通知状态" v-if="currentSignal.notification_sent">
+          <el-descriptions :column="2" size="small">
+            <el-descriptions-item label="通知优先级">
+              <el-tag v-if="currentSignal.priority === 'P2'" type="danger">P2 (立即发送)</el-tag>
+              <el-tag v-else-if="currentSignal.priority === 'P1'" type="warning">P1 (1分钟内)</el-tag>
+              <el-tag v-else-if="currentSignal.priority === 'P0'" type="info">P0 (批量通知)</el-tag>
+              <el-tag v-else>未设置</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="发送时间">
+              {{ currentSignal.notification_time || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="发送渠道" :span="2">
+              <el-space wrap v-if="currentSignal.notification_channels && currentSignal.notification_channels.length > 0">
+                <el-tag v-for="channel in currentSignal.notification_channels" :key="channel" size="small" type="success">
+                  ✓ {{ getChannelName(channel) }}
+                </el-tag>
+              </el-space>
+              <span v-else>-</span>
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <!-- 盈亏信息（如果有） -->
+        <el-card shadow="never" header="盈亏信息" v-if="currentSignal.entry_price" style="margin-top: 20px">
+          <el-descriptions :column="2" size="small">
+            <el-descriptions-item label="入场价格">
+              ${{ currentSignal.entry_price.toFixed(8) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="当前价格">
+              ${{ currentSignal.current_rate?.toFixed(8) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="盈亏比">
+              <span v-if="currentSignal.profit_ratio" :style="{ color: currentSignal.profit_ratio > 0 ? '#67C23A' : '#F56C6C', fontWeight: 'bold' }">
+                {{ currentSignal.profit_ratio > 0 ? '+' : '' }}{{ (currentSignal.profit_ratio * 100).toFixed(2) }}%
+              </span>
+              <span v-else>-</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="盈亏金额">
+              <span v-if="currentSignal.profit_abs" :style="{ color: currentSignal.profit_abs > 0 ? '#67C23A' : '#F56C6C', fontWeight: 'bold' }">
+                {{ currentSignal.profit_abs > 0 ? '+' : '' }}${{ currentSignal.profit_abs.toFixed(2) }}
+              </span>
+              <span v-else>-</span>
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+      </div>
+
+      <template #footer>
+        <el-button @click="showDetailDialog = false">关闭</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -176,6 +276,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Check } from '@element-plus/icons-vue'
 import { signalAPI } from '@/api'
 
 const loading = ref(false)
@@ -244,6 +345,33 @@ const handleView = async (row) => {
   } catch (error) {
     ElMessage.error('获取信号详情失败')
   }
+}
+
+// 辅助函数
+const formatVolume = (volume) => {
+  if (!volume) return '-'
+  if (volume >= 1000000) {
+    return (volume / 1000000).toFixed(2) + 'M'
+  } else if (volume >= 1000) {
+    return (volume / 1000).toFixed(2) + 'K'
+  }
+  return volume.toFixed(2)
+}
+
+const getPriceChangeColor = (change) => {
+  if (!change) return '#606266'
+  return change > 0 ? '#67C23A' : '#F56C6C'
+}
+
+const getChannelName = (channel) => {
+  const channelMap = {
+    'sms': '短信',
+    'feishu': '飞书',
+    'wechat': '微信',
+    'email': '邮件',
+    'telegram': 'Telegram'
+  }
+  return channelMap[channel] || channel
 }
 
 onMounted(() => {

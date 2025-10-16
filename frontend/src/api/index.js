@@ -12,8 +12,10 @@ export const authAPI = {
 
   // 注册
   register: (username, email, password) => {
-    return request.post('/auth/register', null, {
-      params: { username, email, password }
+    return request.post('/auth/register', {
+      username,
+      email,
+      password
     })
   },
 
@@ -83,6 +85,11 @@ export const signalAPI = {
   // 获取信号统计
   statistics: (params = {}) => {
     return request.get('/signals/statistics/summary', { params })
+  },
+
+  // 获取信号趋势
+  trend: (params = {}) => {
+    return request.get('/signals/statistics/trend', { params })
   }
 }
 
@@ -169,5 +176,73 @@ export const notificationAPI = {
   // 获取通知渠道
   channels: () => {
     return request.get('/notifications/channels')
+  }
+}
+
+// 代理API
+export const proxyAPI = {
+  // 获取代理列表
+  list: () => {
+    return request.get('/proxies/')
+  },
+
+  // 获取代理详情
+  get: (id) => {
+    return request.get(`/proxies/${id}`)
+  },
+
+  // 创建代理
+  create: (data) => {
+    return request.post('/proxies/', data)
+  },
+
+  // 更新代理
+  update: (id, data) => {
+    return request.put(`/proxies/${id}`, data)
+  },
+
+  // 删除代理
+  delete: (id) => {
+    return request.delete(`/proxies/${id}`)
+  },
+
+  // 测试代理
+  test: (id) => {
+    return request.post(`/proxies/${id}/test`)
+  },
+
+  // 交换优先级
+  swapPriority: (id1, id2) => {
+    return request.post('/proxies/swap-priority', null, {
+      params: { proxy_id_1: id1, proxy_id_2: id2 }
+    })
+  },
+
+  // 获取健康检查配置
+  getHealthCheckConfig: () => {
+    return request.get('/proxies/health-check-config')
+  },
+
+  // 更新健康检查配置
+  updateHealthCheckConfig: (config) => {
+    return request.put('/proxies/health-check-config', config)
+  }
+}
+
+// 设置API
+export const settingsAPI = {
+  // 获取用户设置
+  get: () => {
+    return request.get('/settings/')
+  },
+
+  // 更新用户设置
+  update: (settings) => {
+    return request.put('/settings/', settings)
+  },
+
+  // 重置设置为默认值
+  reset: () => {
+    return request.post('/settings/reset')
   }
 }

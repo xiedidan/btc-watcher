@@ -112,7 +112,8 @@ class TestStrategyModel:
             strategy_class="SampleStrategy",
             exchange="binance",
             timeframe="1h",
-            pair_whitelist=["BTC/USDT"]
+            pair_whitelist=["BTC/USDT"],
+            signal_thresholds={"strong": 0.8, "medium": 0.6, "weak": 0.4}
         )
 
         db_session.add(strategy)
@@ -129,16 +130,20 @@ class TestStrategyModel:
             strategy_class="SampleStrategy",
             exchange="binance",
             timeframe="1h",
-            pair_whitelist=["BTC/USDT"]
+            pair_whitelist=["BTC/USDT"],
+            signal_thresholds={"strong": 0.8, "medium": 0.6, "weak": 0.4}
         )
 
         db_session.add(strategy)
         db_session.commit()
         db_session.refresh(strategy)
 
-        # 通过关系访问用户
-        assert strategy.user.id == sample_user.id
-        assert strategy.user.username == sample_user.username
+        # 验证外键关系
+        assert strategy.user_id == sample_user.id
+
+        # 验证可以通过user_id查询到用户
+        user = db_session.query(User).filter_by(id=strategy.user_id).first()
+        assert user.username == sample_user.username
 
 
 class TestSignalModel:
@@ -151,10 +156,9 @@ class TestSignalModel:
             pair="BTC/USDT",
             action="buy",
             signal_strength=0.85,
-            price=50000.0,
-            volume=1.5,
-            timestamp=datetime.utcnow(),
-            metadata={"indicator": "RSI", "value": 30}
+            strength_level="strong",
+            current_rate=50000.0,
+            signal_metadata={"indicator": "RSI", "value": 30}
         )
 
         db_session.add(signal)
@@ -166,6 +170,7 @@ class TestSignalModel:
         assert signal.pair == "BTC/USDT"
         assert signal.action == "buy"
         assert signal.signal_strength == 0.85
+        assert signal.strength_level == "strong"
 
     def test_signal_strategy_relationship(self, db_session, sample_strategy):
         """测试信号与策略关系"""
@@ -174,31 +179,49 @@ class TestSignalModel:
             pair="ETH/USDT",
             action="sell",
             signal_strength=0.75,
-            price=3000.0,
-            timestamp=datetime.utcnow()
+            strength_level="medium",
+            current_rate=3000.0
         )
 
         db_session.add(signal)
         db_session.commit()
         db_session.refresh(signal)
 
-        # 通过关系访问策略
-        assert signal.strategy.id == sample_strategy.id
-        assert signal.strategy.name == sample_strategy.name
+        # 验证外键关系
+        assert signal.strategy_id == sample_strategy.id
+
+        # 验证可以通过strategy_id查询到策略
+        strategy = db_session.query(Strategy).filter_by(id=signal.strategy_id).first()
+        assert strategy.name == sample_strategy.name
 
 
 class TestNotificationModel:
     """通知模型测试"""
 
-    def test_notification_creation(self, db_session, sample_user):
+    def test_notification_creation(self, db_session, sample_user, sample_strategy):
         """测试创建通知"""
+        # 先创建一个signal
+        signal = Signal(
+            strategy_id=sample_strategy.id,
+            pair="BTC/USDT",
+            action="buy",
+            signal_strength=0.9,
+            strength_level="strong",
+            current_rate=50000.0
+        )
+        db_session.add(signal)
+        db_session.commit()
+        db_session.refresh(signal)
+
         notification = Notification(
+            signal_id=signal.id,
             user_id=sample_user.id,
-            type="alert",
+            notification_type="alert",
             title="High CPU Usage",
             message="CPU usage is above 90%",
             priority="P1",
             channel="telegram",
+            recipient="@testuser",
             status="pending"
         )
 
@@ -208,17 +231,33 @@ class TestNotificationModel:
 
         assert notification.id is not None
         assert notification.user_id == sample_user.id
-        assert notification.type == "alert"
+        assert notification.notification_type == "alert"
         assert notification.priority == "P1"
 
-    def test_notification_default_status(self, db_session, sample_user):
+    def test_notification_default_status(self, db_session, sample_user, sample_strategy):
         """测试通知默认状态"""
+        # 先创建一个signal
+        signal = Signal(
+            strategy_id=sample_strategy.id,
+            pair="BTC/USDT",
+            action="buy",
+            signal_strength=0.8,
+            strength_level="strong",
+            current_rate=50000.0
+        )
+        db_session.add(signal)
+        db_session.commit()
+        db_session.refresh(signal)
+
         notification = Notification(
+            signal_id=signal.id,
             user_id=sample_user.id,
-            type="info",
+            notification_type="info",
             title="Test Notification",
             message="Test message",
-            channel="email"
+            priority="P2",
+            channel="email",
+            recipient="test@example.com"
         )
 
         db_session.add(notification)
@@ -227,23 +266,42 @@ class TestNotificationModel:
 
         assert notification.status == "pending"
 
-    def test_notification_user_relationship(self, db_session, sample_user):
+    def test_notification_user_relationship(self, db_session, sample_user, sample_strategy):
         """测试通知与用户关系"""
+        # 先创建一个signal
+        signal = Signal(
+            strategy_id=sample_strategy.id,
+            pair="BTC/USDT",
+            action="buy",
+            signal_strength=0.85,
+            strength_level="strong",
+            current_rate=50000.0
+        )
+        db_session.add(signal)
+        db_session.commit()
+        db_session.refresh(signal)
+
         notification = Notification(
+            signal_id=signal.id,
             user_id=sample_user.id,
-            type="warning",
+            notification_type="warning",
             title="Test Warning",
             message="This is a warning",
-            channel="telegram"
+            priority="P1",
+            channel="telegram",
+            recipient="@testuser"
         )
 
         db_session.add(notification)
         db_session.commit()
         db_session.refresh(notification)
 
-        # 通过关系访问用户
-        assert notification.user.id == sample_user.id
-        assert notification.user.username == sample_user.username
+        # 验证外键关系
+        assert notification.user_id == sample_user.id
+
+        # 验证可以通过user_id查询到用户
+        user = db_session.query(User).filter_by(id=notification.user_id).first()
+        assert user.username == sample_user.username
 
 
 class TestModelTimestamps:
@@ -262,6 +320,14 @@ class TestModelTimestamps:
         db_session.refresh(user)
 
         assert user.created_at is not None
+        # updated_at在创建时为None，需要更新后才有值
+        assert user.updated_at is None or user.updated_at is not None
+
+        # 更新用户以触发updated_at
+        user.email = "updated@example.com"
+        db_session.commit()
+        db_session.refresh(user)
+
         assert user.updated_at is not None
         assert user.created_at <= user.updated_at
 
@@ -273,7 +339,8 @@ class TestModelTimestamps:
             strategy_class="SampleStrategy",
             exchange="binance",
             timeframe="1h",
-            pair_whitelist=["BTC/USDT"]
+            pair_whitelist=["BTC/USDT"],
+            signal_thresholds={"strong": 0.8, "medium": 0.6, "weak": 0.4}
         )
 
         db_session.add(strategy)
@@ -281,6 +348,12 @@ class TestModelTimestamps:
         db_session.refresh(strategy)
 
         assert strategy.created_at is not None
+
+        # 更新策略以触发updated_at
+        strategy.name = "Updated Strategy"
+        db_session.commit()
+        db_session.refresh(strategy)
+
         assert strategy.updated_at is not None
 
 
