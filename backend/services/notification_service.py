@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database.session import SessionLocal
-from models.notification import Notification
+from models.notification import NotificationHistory  # Use NotificationHistory instead of Notification
 from models.user import User
 from config import settings
 
@@ -232,17 +232,16 @@ Strategy: {signal_data.get("strategy_name", "Unknown")}
                 recipient = self._get_recipient(user, data["channel"])
 
                 # 创建通知记录
-                notification = Notification(
+                notification = NotificationHistory(
                     signal_id=data.get("signal_id"),
                     user_id=data["user_id"],
                     notification_type=data["notification_type"],
                     priority=data["priority"],
-                    channel=data["channel"],
+                    channel_type=data["channel"],
                     status="pending",
                     title=data["title"],
                     message=data["message"],
-                    data=data.get("data"),
-                    recipient=recipient
+                    extra_data=data.get("data")
                 )
 
                 session.add(notification)
@@ -260,7 +259,7 @@ Strategy: {signal_data.get("strategy_name", "Unknown")}
         try:
             async with SessionLocal() as session:
                 result = await session.execute(
-                    select(Notification).where(Notification.id == notification_id)
+                    select(NotificationHistory).where(NotificationHistory.id == notification_id)
                 )
                 notification = result.scalar_one_or_none()
 
@@ -396,7 +395,7 @@ Strategy: {signal_data.get("strategy_name", "Unknown")}
                 cutoff_time = datetime.now() - timedelta(hours=hours)
 
                 result = await session.execute(
-                    select(Notification).where(Notification.created_at >= cutoff_time)
+                    select(NotificationHistory).where(NotificationHistory.created_at >= cutoff_time)
                 )
                 notifications = result.scalars().all()
 

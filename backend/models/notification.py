@@ -139,7 +139,7 @@ class NotificationHistory(Base):
     # Metadata
     signal_id = Column(Integer, nullable=True)  # If related to a signal
     strategy_id = Column(Integer, nullable=True)  # If related to a strategy
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column(JSON, nullable=True)  # Additional metadata (renamed from metadata to avoid SQLAlchemy reserved word)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
