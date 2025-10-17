@@ -326,6 +326,52 @@ html.dark .el-descriptions__cell {
 **状态**: ✅ 已修复
 **修复方案**: 在图表option中设置legend文字颜色，使用computed属性动态切换
 
+#### 2.2.16 el-tag--light标签背景过亮 (监控页面Last Update) 🆕 ✅
+**问题**: 监控页面的 "Last Update: 2025/10/17 10:47:52" 标签背景过亮
+**HTML元素**: `<span class="el-tag el-tag--primary el-tag--small el-tag--light">`
+**位置**: `frontend/src/views/Monitoring.vue` 或全局样式
+**状态**: ✅ 已修复
+**修复方案**:
+```css
+html.dark .el-tag--light.el-tag--primary {
+  background-color: rgba(64, 158, 255, 0.15) !important;
+  border-color: rgba(64, 158, 255, 0.3) !important;
+  color: #409eff !important;
+}
+```
+
+#### 2.2.17 el-tag--light标签背景过亮 (信号页面今日信号) 🆕 ✅
+**问题**: 信号页面的 "今日信号: 0" 标签背景过亮
+**HTML元素**: `<span class="el-tag el-tag--primary el-tag--light">`
+**位置**: `frontend/src/views/Signals.vue` 或全局样式
+**状态**: ✅ 已修复
+**修复方案**: 与2.2.16相同，同时添加了所有颜色变体的支持
+
+#### 2.2.18 下拉菜单已选中项背景过亮 (未hover时) 🆕 ✅
+**问题**: 下拉菜单中已选中的项，在未hover时背景过亮
+**HTML元素**: `<li class="el-select-dropdown__item is-selected">`
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: ✅ 已修复
+**修复方案**:
+```css
+html.dark .el-select-dropdown__item.is-selected {
+  background-color: rgba(64, 158, 255, 0.1) !important;
+}
+```
+
+#### 2.2.19 下拉菜单wrapper背景过亮 🆕 ✅
+**问题**: 下拉菜单本身（未展开状态）的背景过亮
+**HTML元素**: `<div class="el-select__wrapper">`
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: ✅ 已修复
+**修复方案**:
+```css
+html.dark .el-select__wrapper {
+  background-color: var(--input-bg) !important;
+  box-shadow: 0 0 0 1px var(--input-border) inset !important;
+}
+```
+
 ### 2.3 其他暗色主题优化
 - [ ] 检查卡片阴影效果
 - [ ] 检查按钮hover状态
@@ -472,6 +518,12 @@ html.dark .el-descriptions__cell {
 - 修复Router和MainLayout i18n遗漏:
   * Router meta.title转换为i18n keys ✅
   * MainLayout breadcrumb使用$t()翻译 ✅
+- 新增4个"老大难"暗色主题问题并全部修复:
+  * el-tag--light标签背景过亮(监控页面Last Update) ✅
+  * el-tag--light标签背景过亮(信号页面今日信号) ✅
+  * 下拉菜单已选中项背景过亮(未hover时) ✅
+  * 下拉菜单wrapper背景过亮 ✅
+  * 额外修复了所有tag颜色变体(success/warning/danger/info) ✅
 
 ---
 

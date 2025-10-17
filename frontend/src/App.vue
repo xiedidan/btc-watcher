@@ -395,6 +395,53 @@ html.dark .el-tag {
   border-color: var(--border-color);
 }
 
+/* Tag - Light variant 修复 */
+html.dark .el-tag--light.el-tag--primary {
+  background-color: rgba(64, 158, 255, 0.15) !important;
+  border-color: rgba(64, 158, 255, 0.3) !important;
+  color: #409eff !important;
+}
+
+html.dark .el-tag--light.el-tag--success {
+  background-color: rgba(103, 194, 58, 0.15) !important;
+  border-color: rgba(103, 194, 58, 0.3) !important;
+  color: #67c23a !important;
+}
+
+html.dark .el-tag--light.el-tag--warning {
+  background-color: rgba(230, 162, 60, 0.15) !important;
+  border-color: rgba(230, 162, 60, 0.3) !important;
+  color: #e6a23c !important;
+}
+
+html.dark .el-tag--light.el-tag--danger {
+  background-color: rgba(245, 108, 108, 0.15) !important;
+  border-color: rgba(245, 108, 108, 0.3) !important;
+  color: #f56c6c !important;
+}
+
+html.dark .el-tag--light.el-tag--info {
+  background-color: rgba(144, 147, 153, 0.15) !important;
+  border-color: rgba(144, 147, 153, 0.3) !important;
+  color: #909399 !important;
+}
+
+/* Select - 修复下拉菜单wrapper背景 */
+html.dark .el-select__wrapper {
+  background-color: var(--input-bg) !important;
+  box-shadow: 0 0 0 1px var(--input-border) inset !important;
+}
+
+/* Select dropdown - 修复已选中项背景（非hover状态） */
+html.dark .el-select-dropdown__item.is-selected {
+  background-color: rgba(64, 158, 255, 0.1) !important;
+  color: var(--el-color-primary);
+}
+
+html.dark .el-select-dropdown__item.is-selected.is-hovering {
+  background-color: rgba(64, 158, 255, 0.15) !important;
+}
+
 /* Dialog */
 html.dark .el-dialog {
   background-color: var(--card-bg);
