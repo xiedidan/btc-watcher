@@ -149,6 +149,8 @@ import { useI18n } from 'vue-i18n'
 import { useStrategyStore } from '@/stores/strategy'
 import { useSystemStore } from '@/stores/system'
 import { useThemeStore } from '@/stores/theme'
+import { useWebSocketStore } from '@/stores/websocket'
+import { useUserStore } from '@/stores/user'
 import { signalAPI } from '@/api'
 import { Operation, Check, Notification, Odometer, QuestionFilled } from '@element-plus/icons-vue'
 
@@ -157,6 +159,8 @@ const { t } = useI18n()
 const strategyStore = useStrategyStore()
 const systemStore = useSystemStore()
 const themeStore = useThemeStore()
+const wsStore = useWebSocketStore()
+const userStore = useUserStore()
 
 // Computed property for legend text color based on theme
 const legendTextColor = computed(() => themeStore.theme === 'dark' ? '#e0e0e0' : '#303133')
@@ -344,14 +348,55 @@ onMounted(() => {
   fetchDashboardData()
   fetchSignalTrend()
 
-  // 每30秒刷新一次
+  // Connect to WebSocket and subscribe to topics
+  if (userStore.token && !wsStore.isConnected) {
+    wsStore.connect(userStore.token)
+  }
+
+  // Subscribe to real-time updates
+  setTimeout(() => {
+    wsStore.subscribe('monitoring')
+    wsStore.subscribe('strategies')
+    wsStore.subscribe('signals')
+    wsStore.subscribe('capacity')
+  }, 500) // 给连接建立一点时间
+
+  // 每30秒刷新一次（作为WebSocket的备份）
   refreshTimer = setInterval(fetchDashboardData, 30000)
 })
+
+// Watch WebSocket data and update UI in real-time
+watch(() => wsStore.strategiesData, (newData) => {
+  if (newData) {
+    overview.value.running_strategies = newData.running || overview.value.running_strategies
+    overview.value.total_strategies = newData.total || overview.value.total_strategies
+  }
+}, { deep: true })
+
+watch(() => wsStore.signalsData, (newSignals) => {
+  if (newSignals && newSignals.length > 0) {
+    // 有新信号到达，刷新统计数据
+    fetchSignalTrend()
+    signalStats.value.total_signals = (signalStats.value.total_signals || 0) + newSignals.length
+  }
+}, { deep: true })
+
+watch(() => wsStore.capacityData, (newCapacity) => {
+  if (newCapacity) {
+    capacity.value = newCapacity
+  }
+}, { deep: true })
 
 onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer)
   }
+
+  // Unsubscribe from WebSocket topics when leaving dashboard
+  wsStore.unsubscribe('monitoring')
+  wsStore.unsubscribe('strategies')
+  wsStore.unsubscribe('signals')
+  wsStore.unsubscribe('capacity')
 })
 </script>
 

@@ -12,6 +12,7 @@ import logging
 from database import get_db
 from models.signal import Signal
 from models.strategy import Strategy
+from services.websocket_service import ws_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -177,6 +178,20 @@ async def receive_freqtrade_signal(
         await db.refresh(signal)
 
         logger.info(f"Received signal {signal.id} from strategy {strategy_id}: {signal.pair} {signal.action}")
+
+        # 推送新信号到WebSocket订阅客户端
+        await ws_service.push_new_signal({
+            "id": signal.id,
+            "strategy_id": signal.strategy_id,
+            "strategy_name": strategy.name,
+            "pair": signal.pair,
+            "action": signal.action,
+            "signal_strength": signal.signal_strength,
+            "strength_level": signal.strength_level,
+            "current_rate": signal.current_rate,
+            "profit_ratio": signal.profit_ratio,
+            "created_at": signal.created_at.isoformat() if signal.created_at else None
+        })
 
         # TODO: 触发通知（如果强度达到阈值）
 

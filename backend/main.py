@@ -15,6 +15,7 @@ from core.freqtrade_manager import FreqTradeGatewayManager
 from services.monitoring_service import MonitoringService
 from services.notification_service import NotificationService
 from app.websocket.monitoring_broadcaster import MonitoringBroadcaster
+from app.websocket.manager import manager as ws_manager
 from core.redis_client import redis_client
 from services.token_cache import TokenCacheService
 import services.token_cache as token_cache_module
@@ -110,12 +111,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize token cache service: {e}")
 
+    # Start WebSocket heartbeat checker
+    try:
+        await ws_manager.start_heartbeat_checker()
+        logger.info("✅ WebSocket heartbeat checker started")
+    except Exception as e:
+        logger.error(f"Failed to start WebSocket heartbeat checker: {e}")
+
     logger.info("Application startup complete")
 
     yield
 
     # Shutdown
     logger.info("Shutting down application...")
+
+    # Stop WebSocket heartbeat checker
+    try:
+        await ws_manager.stop_heartbeat_checker()
+        logger.info("WebSocket heartbeat checker stopped")
+    except Exception as e:
+        logger.error(f"Failed to stop WebSocket heartbeat checker: {e}")
 
     # Stop monitoring broadcaster
     if monitoring_broadcaster:

@@ -14,6 +14,7 @@ from pathlib import Path
 from database import get_db
 from models.strategy import Strategy
 from core.freqtrade_manager import FreqTradeGatewayManager
+from services.websocket_service import ws_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -261,6 +262,18 @@ async def start_strategy(
 
             logger.info(f"Started strategy {strategy_id}: {strategy.name}")
 
+            # 推送策略启动事件到WebSocket订阅客户端
+            await ws_service.push_strategy_status(
+                strategy_id=strategy.id,
+                status="started",
+                data={
+                    "name": strategy.name,
+                    "exchange": strategy.exchange,
+                    "port": strategy.port,
+                    "started_at": strategy.started_at.isoformat() if strategy.started_at else None
+                }
+            )
+
             return {
                 "id": strategy.id,
                 "name": strategy.name,
@@ -313,6 +326,16 @@ async def stop_strategy(
             await db.commit()
 
             logger.info(f"Stopped strategy {strategy_id}: {strategy.name}")
+
+            # 推送策略停止事件到WebSocket订阅客户端
+            await ws_service.push_strategy_status(
+                strategy_id=strategy.id,
+                status="stopped",
+                data={
+                    "name": strategy.name,
+                    "stopped_at": strategy.stopped_at.isoformat() if strategy.stopped_at else None
+                }
+            )
 
             return {
                 "id": strategy.id,
