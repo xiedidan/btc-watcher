@@ -246,8 +246,8 @@ async def start_strategy(
             "proxy_id": strategy.proxy_id
         }
 
-        # 启动FreqTrade实例
-        success = await ft_manager.create_strategy(strategy_config)
+        # 启动FreqTrade实例（传递db session用于查询代理）
+        success = await ft_manager.create_strategy(strategy_config, db)
 
         if success:
             # 更新数据库状态
@@ -370,6 +370,33 @@ async def delete_strategy(
     except Exception as e:
         await db.rollback()
         logger.error(f"Failed to delete strategy {strategy_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{strategy_id}/health")
+async def check_strategy_health(
+    strategy_id: int,
+    ft_manager: FreqTradeGatewayManager = Depends(get_ft_manager)
+):
+    """检查策略健康状态"""
+    try:
+        health_status = await ft_manager.check_strategy_health(strategy_id)
+        return health_status
+    except Exception as e:
+        logger.error(f"Failed to check strategy {strategy_id} health: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health/all")
+async def check_all_strategies_health(
+    ft_manager: FreqTradeGatewayManager = Depends(get_ft_manager)
+):
+    """检查所有策略的健康状态"""
+    try:
+        health_report = await ft_manager.check_all_strategies_health()
+        return health_report
+    except Exception as e:
+        logger.error(f"Failed to check all strategies health: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

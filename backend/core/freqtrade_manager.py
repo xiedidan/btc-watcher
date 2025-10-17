@@ -44,7 +44,7 @@ class FreqTradeGatewayManager:
             logger.warning(f"Failed to create FreqTrade directories: {e}")
             logger.warning("FreqTrade manager will operate with reduced functionality")
 
-    async def create_strategy(self, strategy_config: dict) -> bool:
+    async def create_strategy(self, strategy_config: dict, db = None) -> bool:
         """创建并启动新策略"""
         strategy_id = strategy_config["id"]
 
@@ -55,8 +55,8 @@ class FreqTradeGatewayManager:
             port = await self._allocate_port(strategy_id)
             logger.info(f"Allocated port {port} for strategy {strategy_id}")
 
-            # 2. 生成配置文件
-            config_file = await self._generate_config_file(strategy_config, port)
+            # 2. 生成配置文件（传递db session用于查询代理）
+            config_file = await self._generate_config_file(strategy_config, port, db)
             logger.info(f"Generated config file for strategy {strategy_id}: {config_file}")
 
             # 3. 启动FreqTrade进程
@@ -160,6 +160,100 @@ class FreqTradeGatewayManager:
             "architecture": "multi_instance_reverse_proxy"
         }
 
+    async def check_strategy_health(self, strategy_id: int) -> dict:
+        """检查单个策略的健康状态"""
+        if strategy_id not in self.strategy_processes:
+            return {
+                "strategy_id": strategy_id,
+                "status": "not_found",
+                "healthy": False,
+                "message": "Strategy process not found"
+            }
+
+        process = self.strategy_processes[strategy_id]
+        port = self.strategy_ports.get(strategy_id)
+
+        # 1. 检查进程是否运行
+        process_running = process.poll() is None
+        if not process_running:
+            return {
+                "strategy_id": strategy_id,
+                "status": "process_dead",
+                "healthy": False,
+                "message": f"Process exited with code {process.returncode}",
+                "port": port
+            }
+
+        # 2. 检查API是否响应
+        if port:
+            api_healthy = await self._check_api_health(port)
+            if not api_healthy:
+                return {
+                    "strategy_id": strategy_id,
+                    "status": "api_unhealthy",
+                    "healthy": False,
+                    "message": "FreqTrade API not responding",
+                    "port": port,
+                    "process_id": process.pid
+                }
+
+        # 3. 获取进程资源使用情况
+        try:
+            proc = psutil.Process(process.pid)
+            cpu_percent = proc.cpu_percent(interval=1)
+            memory_mb = proc.memory_info().rss / 1024 / 1024
+
+            return {
+                "strategy_id": strategy_id,
+                "status": "running",
+                "healthy": True,
+                "port": port,
+                "process_id": process.pid,
+                "cpu_percent": round(cpu_percent, 2),
+                "memory_mb": round(memory_mb, 2),
+                "num_threads": proc.num_threads()
+            }
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return {
+                "strategy_id": strategy_id,
+                "status": "process_inaccessible",
+                "healthy": False,
+                "message": "Cannot access process information",
+                "port": port
+            }
+
+    async def check_all_strategies_health(self) -> dict:
+        """检查所有策略的健康状态"""
+        results = {}
+        strategy_ids = list(self.strategy_processes.keys())
+
+        for strategy_id in strategy_ids:
+            results[strategy_id] = await self.check_strategy_health(strategy_id)
+
+        # 统计健康状态
+        healthy_count = sum(1 for r in results.values() if r.get("healthy", False))
+        unhealthy_count = len(results) - healthy_count
+
+        return {
+            "total_strategies": len(results),
+            "healthy_strategies": healthy_count,
+            "unhealthy_strategies": unhealthy_count,
+            "health_details": results
+        }
+
+    async def _check_api_health(self, port: int, timeout: int = 5) -> bool:
+        """检查FreqTrade API健康状态"""
+        try:
+            api_url = f"http://127.0.0.1:{port}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{api_url}/api/v1/ping",
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as response:
+                    return response.status == 200
+        except:
+            return False
+
     async def _allocate_port(self, strategy_id: int) -> int:
         """为策略分配端口 - 支持1000个并发策略"""
         # 检查是否超过最大策略数
@@ -182,8 +276,11 @@ class FreqTradeGatewayManager:
         logger.info(f"Allocated port {allocated_port} for strategy {strategy_id}")
         return allocated_port
 
-    async def _generate_config_file(self, strategy_config: dict, port: int) -> str:
+    async def _generate_config_file(self, strategy_config: dict, port: int, db = None) -> str:
         """生成FreqTrade配置文件"""
+        # 获取代理配置
+        proxy_config = await self._get_proxy_config(strategy_config.get("proxy_id"), db)
+
         config = {
             "strategy": strategy_config["strategy_class"],
             "strategy_path": str(self.strategies_path),
@@ -197,7 +294,7 @@ class FreqTradeGatewayManager:
                 "secret": "",
                 "ccxt_config": {
                     "enableRateLimit": True,
-                    "proxies": self._get_proxy_config(strategy_config.get("proxy_id"))
+                    "proxies": proxy_config
                 },
                 "pair_whitelist": strategy_config["pair_whitelist"],
                 "pair_blacklist": strategy_config.get("pair_blacklist", [])
@@ -333,12 +430,65 @@ class FreqTradeGatewayManager:
             logger.info(f"Cleanup: Released port {released_port} back to pool")
             del self.strategy_ports[strategy_id]
 
-    def _get_proxy_config(self, proxy_id: Optional[int]) -> dict:
-        """获取代理配置"""
-        if not proxy_id:
+    async def _get_proxy_config(self, proxy_id: Optional[int], db = None) -> dict:
+        """获取代理配置 - 从数据库查询健康的代理"""
+        if not proxy_id or not db:
+            logger.debug("No proxy configured or no database session available")
             return {}
-        # TODO: 从数据库获取代理配置
-        return {
-            "http": "socks5://proxy.example.com:1080",
-            "https": "socks5://proxy.example.com:1080"
-        }
+
+        try:
+            from sqlalchemy import select
+            from models.proxy import Proxy
+
+            # 查询指定的代理
+            result = await db.execute(
+                select(Proxy).where(Proxy.id == proxy_id)
+            )
+            proxy = result.scalar_one_or_none()
+
+            if not proxy:
+                logger.warning(f"Proxy {proxy_id} not found in database")
+                return {}
+
+            # 检查代理是否可用
+            if not proxy.is_active or not proxy.is_healthy:
+                logger.warning(
+                    f"Proxy {proxy_id} ({proxy.name}) is not available: "
+                    f"active={proxy.is_active}, healthy={proxy.is_healthy}"
+                )
+                # 尝试查找备用代理
+                result = await db.execute(
+                    select(Proxy)
+                    .where(Proxy.is_active == True)
+                    .where(Proxy.is_healthy == True)
+                    .order_by(Proxy.priority, Proxy.success_rate.desc())
+                    .limit(1)
+                )
+                proxy = result.scalar_one_or_none()
+
+                if not proxy:
+                    logger.warning("No healthy backup proxy available, will use direct connection")
+                    return {}
+                else:
+                    logger.info(f"Using backup proxy {proxy.id} ({proxy.name})")
+
+            # 构建代理URL
+            proxy_url = f"{proxy.proxy_type}://"
+
+            # 添加认证信息（如果有）
+            if proxy.username and proxy.password:
+                proxy_url += f"{proxy.username}:{proxy.password}@"
+
+            proxy_url += f"{proxy.host}:{proxy.port}"
+
+            logger.info(f"Using proxy {proxy.id} ({proxy.name}): {proxy.proxy_type}://{proxy.host}:{proxy.port}")
+
+            # 返回CCXT格式的代理配置
+            return {
+                "http": proxy_url,
+                "https": proxy_url
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get proxy configuration: {e}", exc_info=True)
+            return {}
