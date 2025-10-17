@@ -59,6 +59,10 @@
 
           <el-breadcrumb separator="/">
             <el-breadcrumb-item :to="{ path: '/' }">{{ $t('common.home') }}</el-breadcrumb-item>
+            <!-- 草稿管理特殊处理：添加策略管理层级 -->
+            <el-breadcrumb-item v-if="$route.path === '/drafts'" :to="{ path: '/strategies' }">
+              {{ $t('nav.strategies') }}
+            </el-breadcrumb-item>
             <el-breadcrumb-item v-if="$route.meta.title">
               {{ $t($route.meta.title) }}
             </el-breadcrumb-item>

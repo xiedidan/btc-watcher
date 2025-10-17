@@ -20,7 +20,7 @@
       <!-- 搜索栏 -->
       <el-form :inline="true" class="search-form">
         <el-form-item :label="t('strategy.status')">
-          <el-select v-model="searchForm.status" :placeholder="t('strategy.all')" clearable @change="fetchData">
+          <el-select v-model="searchForm.status" :placeholder="t('strategy.all')" clearable @change="fetchData" style="width: 120px">
             <el-option :label="t('strategy.all')" value="" />
             <el-option :label="t('strategy.running')" value="running" />
             <el-option :label="t('strategy.stopped')" value="stopped" />
