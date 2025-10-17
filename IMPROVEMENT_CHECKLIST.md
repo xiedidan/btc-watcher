@@ -386,6 +386,61 @@ html.dark .el-select-dropdown__item {
 }
 ```
 
+#### 2.2.21 el-alert is-light 组件背景过亮 🆕 ✅
+**问题**: Alert提示框（light变体）在暗色主题下背景过亮
+**HTML元素**: `<div class="el-alert el-alert--info is-light">`
+**示例**: 策略管理页面的"0个修改中"提示框
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: ✅ 已修复
+**修复方案**:
+```css
+html.dark .el-alert.is-light.el-alert--info {
+  background-color: rgba(64, 158, 255, 0.15) !important;
+  border-color: rgba(64, 158, 255, 0.3) !important;
+}
+```
+**额外收获**: 同时修复了所有alert颜色变体(info/success/warning/error)
+
+#### 2.2.22 el-button is-text hover时背景过亮 🆕 ✅
+**问题**: 文本按钮hover时背景过亮（顶部用户下拉菜单）
+**HTML元素**: `<button class="el-button is-text">`
+**示例**: MainLayout顶部栏的用户下拉菜单按钮
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: ✅ 已修复
+**修复方案**:
+```css
+html.dark .el-button.is-text:hover {
+  background-color: rgba(64, 158, 255, 0.1) !important;
+}
+```
+
+#### 2.2.23 el-checkbox__inner 复选框过亮 🆕 ✅
+**问题**: Checkbox复选框在暗色主题下过亮
+**HTML元素**: `<span class="el-checkbox__inner">`
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: ✅ 已修复
+**分析**: 需要使用!important强制覆盖Element Plus的默认样式
+**修复方案**:
+```css
+html.dark .el-checkbox__inner {
+  background-color: var(--input-bg) !important;
+  border-color: var(--border-color) !important;
+}
+```
+
+#### 2.2.24 el-popper__arrow dropdown箭头过亮 🆕 ✅
+**问题**: Dropdown下拉菜单的小三角箭头在暗色主题下过亮
+**HTML元素**: `<span class="el-popper__arrow">`
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: ✅ 已修复
+**修复方案**:
+```css
+html.dark .el-popper__arrow::before {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border-color) !important;
+}
+```
+
 ### 2.3 其他暗色主题优化
 - [ ] 检查卡片阴影效果
 - [ ] 检查按钮hover状态
@@ -541,6 +596,12 @@ html.dark .el-select-dropdown__item {
 - 修复最后一个老大难问题:
   * 下拉菜单项普通状态背景过亮(未hover未选中) ✅
   * 根本原因：遗漏了el-select-dropdown__item普通状态的背景色设置 ✅
+- 持续发现并修复4个新的暗色主题问题:
+  * el-alert.is-light组件背景过亮 ✅
+  * el-button.is-text hover时背景过亮 ✅
+  * el-checkbox__inner复选框过亮 ✅
+  * el-popper__arrow dropdown箭头过亮 ✅
+  * 额外修复了所有alert颜色变体(info/success/warning/error) ✅
 
 ---
 

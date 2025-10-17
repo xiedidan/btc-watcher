@@ -382,8 +382,8 @@ html.dark .el-picker-panel__body {
 
 /* Checkbox */
 html.dark .el-checkbox__inner {
-  background-color: var(--input-bg);
-  border-color: var(--border-color);
+  background-color: var(--input-bg) !important;
+  border-color: var(--border-color) !important;
 }
 
 html.dark .el-checkbox__input.is-checked .el-checkbox__inner {
@@ -441,6 +441,42 @@ html.dark .el-select-dropdown__item.is-selected {
 
 html.dark .el-select-dropdown__item.is-selected.is-hovering {
   background-color: rgba(64, 158, 255, 0.15) !important;
+}
+
+/* Button - Text variant hover 修复 */
+html.dark .el-button.is-text:hover {
+  background-color: rgba(64, 158, 255, 0.1) !important;
+}
+
+html.dark .el-button.is-text:focus {
+  background-color: rgba(64, 158, 255, 0.1) !important;
+}
+
+/* Alert - Light variant 修复 */
+html.dark .el-alert.is-light.el-alert--info {
+  background-color: rgba(64, 158, 255, 0.15) !important;
+  border-color: rgba(64, 158, 255, 0.3) !important;
+}
+
+html.dark .el-alert.is-light.el-alert--success {
+  background-color: rgba(103, 194, 58, 0.15) !important;
+  border-color: rgba(103, 194, 58, 0.3) !important;
+}
+
+html.dark .el-alert.is-light.el-alert--warning {
+  background-color: rgba(230, 162, 60, 0.15) !important;
+  border-color: rgba(230, 162, 60, 0.3) !important;
+}
+
+html.dark .el-alert.is-light.el-alert--error {
+  background-color: rgba(245, 108, 108, 0.15) !important;
+  border-color: rgba(245, 108, 108, 0.3) !important;
+}
+
+/* Popper Arrow - 修复下拉菜单箭头 */
+html.dark .el-popper__arrow::before {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border-color) !important;
 }
 
 /* Dialog */
