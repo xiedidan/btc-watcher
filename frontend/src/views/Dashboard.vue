@@ -144,10 +144,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useStrategyStore } from '@/stores/strategy'
 import { useSystemStore } from '@/stores/system'
+import { useThemeStore } from '@/stores/theme'
 import { signalAPI } from '@/api'
 import { Operation, Check, Notification, Odometer, QuestionFilled } from '@element-plus/icons-vue'
 
@@ -155,6 +156,10 @@ const { t } = useI18n()
 
 const strategyStore = useStrategyStore()
 const systemStore = useSystemStore()
+const themeStore = useThemeStore()
+
+// Computed property for legend text color based on theme
+const legendTextColor = computed(() => themeStore.theme === 'dark' ? '#e0e0e0' : '#303133')
 
 const overview = ref({})
 const capacity = ref({})
@@ -178,7 +183,10 @@ const signalTrendOption = ref({
   legend: {
     data: [],
     bottom: '0%',
-    left: 'center'
+    left: 'center',
+    textStyle: {
+      color: legendTextColor.value
+    }
   },
   xAxis: {
     type: 'category',
@@ -230,7 +238,10 @@ const signalDistributionOption = ref({
   },
   legend: {
     bottom: '0%',
-    left: 'center'
+    left: 'center',
+    textStyle: {
+      color: legendTextColor.value
+    }
   },
   series: [
     {
@@ -258,6 +269,13 @@ const signalDistributionOption = ref({
 })
 
 let refreshTimer = null
+
+// Watch theme changes and update legend text color
+watch(() => themeStore.theme, () => {
+  const color = themeStore.theme === 'dark' ? '#e0e0e0' : '#303133'
+  signalTrendOption.value.legend.textStyle = { color }
+  signalDistributionOption.value.legend.textStyle = { color }
+}, { immediate: true })
 
 const fetchDashboardData = async () => {
   try {

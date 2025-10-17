@@ -60,7 +60,7 @@
           <el-breadcrumb separator="/">
             <el-breadcrumb-item :to="{ path: '/' }">{{ $t('common.home') }}</el-breadcrumb-item>
             <el-breadcrumb-item v-if="$route.meta.title">
-              {{ $route.meta.title }}
+              {{ $t($route.meta.title) }}
             </el-breadcrumb-item>
           </el-breadcrumb>
         </div>

@@ -19,43 +19,43 @@ const router = createRouter({
           path: '',
           name: 'dashboard',
           component: () => import('@/views/Dashboard.vue'),
-          meta: { title: '仪表盘' }
+          meta: { title: 'nav.dashboard' }
         },
         {
           path: 'strategies',
           name: 'strategies',
           component: () => import('@/views/Strategies.vue'),
-          meta: { title: '策略管理' }
+          meta: { title: 'nav.strategies' }
         },
         {
           path: 'drafts',
           name: 'drafts',
           component: () => import('@/views/Drafts.vue'),
-          meta: { title: '草稿管理' }
+          meta: { title: 'strategy.drafts' }
         },
         {
           path: 'signals',
           name: 'signals',
           component: () => import('@/views/Signals.vue'),
-          meta: { title: '信号列表' }
+          meta: { title: 'nav.signals' }
         },
         {
           path: 'proxies',
           name: 'proxies',
           component: () => import('@/views/Proxies.vue'),
-          meta: { title: '代理管理' }
+          meta: { title: 'nav.proxies' }
         },
         {
           path: 'monitoring',
           name: 'monitoring',
           component: () => import('@/views/Monitoring.vue'),
-          meta: { title: '系统监控' }
+          meta: { title: 'nav.monitoring' }
         },
         {
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/Settings.vue'),
-          meta: { title: '系统设置' }
+          meta: { title: 'nav.settings' }
         }
       ]
     }

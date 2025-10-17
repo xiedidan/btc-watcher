@@ -203,16 +203,21 @@ html.dark .el-button.is-disabled:focus {
 
 /* 2. 下拉菜单输入框 - 降低亮度 */
 html.dark .el-select .el-input__wrapper {
-  background-color: var(--input-bg);
-  box-shadow: 0 0 0 1px var(--input-border) inset;
+  background-color: var(--input-bg) !important;
+  box-shadow: 0 0 0 1px var(--input-border) inset !important;
 }
 
 html.dark .el-select .el-input__wrapper:hover {
-  box-shadow: 0 0 0 1px var(--border-color) inset;
+  box-shadow: 0 0 0 1px var(--border-color) inset !important;
 }
 
 html.dark .el-select .el-input__wrapper.is-focus {
-  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset !important;
+}
+
+html.dark .el-select-dropdown__item.hover,
+html.dark .el-select-dropdown__item:hover {
+  background-color: rgba(64, 158, 255, 0.15) !important;
 }
 
 /* 3. 切换按钮(Switch)的圆点和背景 - 降低亮度 */
@@ -289,6 +294,10 @@ html.dark .el-descriptions--bordered .el-descriptions__cell {
   border-color: var(--border-color);
 }
 
+html.dark .el-descriptions__cell {
+  background-color: transparent !important;
+}
+
 /* 7. 进度条空白部分区分度增强 - 使用半透明白色提供对比度但不刺眼 */
 html.dark .el-progress-bar__outer {
   background-color: rgba(255, 255, 255, 0.08) !important;
@@ -312,6 +321,11 @@ html.dark .el-select .el-input.is-focus .el-input__wrapper {
 
 html.dark .el-select .el-input__inner {
   color: var(--text-primary);
+}
+
+/* 下拉菜单项hover效果优化 */
+html.dark .el-dropdown-menu__item:hover {
+  background-color: rgba(64, 158, 255, 0.15) !important;
 }
 
 /* 10. 统计卡片和描述列表背景修复 */
