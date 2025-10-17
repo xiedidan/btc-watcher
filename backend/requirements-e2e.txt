@@ -1,0 +1,21 @@
+# E2E Testing Dependencies
+# E2E测试依赖包
+
+# Core testing framework
+pytest>=7.4.0
+pytest-playwright>=0.4.3
+playwright>=1.40.0
+
+# Test reporting
+pytest-html>=4.1.1
+pytest-json-report>=1.5.0
+
+# Parallel testing
+pytest-xdist>=3.5.0
+
+# Test coverage (optional)
+pytest-cov>=4.1.0
+
+# Other utilities
+python-dotenv>=1.0.0
+Pillow>=10.0.0  # For screenshot manipulation

@@ -1,0 +1,22 @@
+# Performance Testing Dependencies
+# 性能测试依赖包
+
+# Core Performance Testing Framework
+locust>=2.40.0
+
+# Data manipulation
+msgpack>=1.0.0
+
+# Network
+gevent>=24.0.0
+geventhttpclient>=2.3.0
+
+# Web UI
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Reporting
+pytest>=8.0.0
+
+# Utilities
+python-dotenv>=1.0.0

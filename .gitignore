@@ -205,3 +205,19 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project specific
+# Runtime data directories
+data/
+*.db
+*.db-journal
+
+# Test and performance reports
+**/performance_report*.html
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.nuxt/
+frontend/.output/
+frontend/.DS_Store

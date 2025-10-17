@@ -1,0 +1,553 @@
+/* 暗色主题样式 */
+.dark {
+  color-scheme: dark;
+}
+
+/* 暗色主题 - Layout */
+.dark .main-layout {
+  background: #1a1a1a;
+}
+
+.dark .header {
+  background: #2d2d2d !important;
+  border-bottom: 1px solid #3d3d3d !important;
+  color: #e0e0e0;
+}
+
+.dark .main-content {
+  background: #1a1a1a !important;
+}
+
+.dark .sidebar {
+  background-color: #000814 !important;
+}
+
+/* 暗色主题 - Element Plus 组件覆盖 */
+.dark .el-card {
+  background: #2d2d2d;
+  border-color: #3d3d3d;
+  color: #e0e0e0;
+}
+
+.dark .el-card__header {
+  background-color: #252525;
+  border-bottom-color: #3d3d3d;
+  color: #e0e0e0;
+}
+
+/* Tabs 样式 - 最关键的修复 */
+.dark .el-tabs {
+  --el-text-color-primary: #e0e0e0;
+  --el-text-color-regular: #909399;
+  --el-border-color-light: #3d3d3d;
+}
+
+.dark .el-tabs__header {
+  background-color: #252525;
+  border-bottom: 1px solid #3d3d3d;
+}
+
+.dark .el-tabs__item {
+  color: #909399 !important;
+  background-color: transparent;
+}
+
+.dark .el-tabs__item:hover {
+  color: #c0c4cc !important;
+}
+
+.dark .el-tabs__item.is-active {
+  color: #409EFF !important;
+  background-color: transparent;
+}
+
+.dark .el-tabs__nav-wrap::after {
+  background-color: #3d3d3d;
+}
+
+.dark .el-tabs__active-bar {
+  background-color: #409EFF;
+}
+
+.dark .el-tabs__content {
+  color: #e0e0e0;
+}
+
+/* Table 样式 */
+.dark .el-table {
+  --el-table-bg-color: #2d2d2d;
+  --el-table-tr-bg-color: #2d2d2d;
+  --el-table-header-bg-color: #252525;
+  --el-table-row-hover-bg-color: #3d3d3d;
+  --el-table-border-color: #3d3d3d;
+  --el-table-text-color: #e0e0e0;
+  --el-table-header-text-color: #f0f0f0;
+}
+
+.dark .el-table th,
+.dark .el-table tr {
+  background-color: transparent;
+}
+
+/* Button 样式 */
+.dark .el-button {
+  --el-button-bg-color: #3d3d3d;
+  --el-button-text-color: #e0e0e0;
+  --el-button-border-color: #4d4d4d;
+  --el-button-hover-bg-color: #4d4d4d;
+  --el-button-hover-text-color: #fff;
+}
+
+.dark .el-button--primary {
+  --el-button-bg-color: #409EFF;
+  --el-button-text-color: #fff;
+  --el-button-border-color: #409EFF;
+  --el-button-hover-bg-color: #66b1ff;
+}
+
+.dark .el-button--success {
+  --el-button-bg-color: #67C23A;
+  --el-button-border-color: #67C23A;
+}
+
+.dark .el-button--warning {
+  --el-button-bg-color: #E6A23C;
+  --el-button-border-color: #E6A23C;
+}
+
+.dark .el-button--danger {
+  --el-button-bg-color: #F56C6C;
+  --el-button-border-color: #F56C6C;
+}
+
+/* Input 样式 */
+.dark .el-input__wrapper {
+  background-color: #3d3d3d;
+  box-shadow: 0 0 0 1px #4d4d4d inset;
+}
+
+.dark .el-input__inner {
+  color: #e0e0e0;
+}
+
+.dark .el-input__inner::placeholder {
+  color: #6c6c6c;
+}
+
+.dark .el-textarea__inner {
+  background-color: #3d3d3d;
+  border-color: #4d4d4d;
+  color: #e0e0e0;
+}
+
+.dark .el-textarea__inner::placeholder {
+  color: #6c6c6c;
+}
+
+/* Select 样式 */
+.dark .el-select .el-input__wrapper {
+  background-color: #3d3d3d;
+}
+
+.dark .el-select-dropdown {
+  background-color: #2d2d2d;
+  border-color: #3d3d3d;
+}
+
+.dark .el-select-dropdown__item {
+  color: #e0e0e0;
+}
+
+.dark .el-select-dropdown__item:hover {
+  background-color: #3d3d3d;
+}
+
+.dark .el-select-dropdown__item.selected {
+  color: #409EFF;
+  font-weight: bold;
+}
+
+/* Form 样式 */
+.dark .el-form-item__label {
+  color: #b0b0b0;
+}
+
+.dark .el-form-item__error {
+  color: #f56c6c;
+}
+
+/* Checkbox & Radio 样式 */
+.dark .el-checkbox {
+  --el-checkbox-text-color: #e0e0e0;
+  --el-checkbox-input-border-color: #4d4d4d;
+}
+
+.dark .el-checkbox__label {
+  color: #e0e0e0;
+}
+
+.dark .el-checkbox__inner {
+  background-color: #3d3d3d;
+  border-color: #4d4d4d;
+}
+
+.dark .el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: #409EFF;
+  border-color: #409EFF;
+}
+
+.dark .el-radio {
+  --el-radio-text-color: #e0e0e0;
+  --el-radio-input-border-color: #4d4d4d;
+}
+
+.dark .el-radio__label {
+  color: #e0e0e0;
+}
+
+.dark .el-radio__inner {
+  background-color: #3d3d3d;
+  border-color: #4d4d4d;
+}
+
+.dark .el-radio__input.is-checked .el-radio__inner {
+  background-color: #409EFF;
+  border-color: #409EFF;
+}
+
+/* Switch 样式 */
+.dark .el-switch {
+  --el-switch-off-color: #4d4d4d;
+}
+
+.dark .el-switch__core {
+  background-color: #4d4d4d;
+  border-color: #4d4d4d;
+}
+
+.dark .el-switch.is-checked .el-switch__core {
+  background-color: #409EFF;
+  border-color: #409EFF;
+}
+
+/* Input Number 样式 */
+.dark .el-input-number {
+  background-color: #3d3d3d;
+}
+
+.dark .el-input-number .el-input__wrapper {
+  background-color: #3d3d3d;
+}
+
+/* Time Select / Time Picker 样式 */
+.dark .el-time-panel {
+  background-color: #2d2d2d;
+  border-color: #3d3d3d;
+}
+
+.dark .el-time-panel__content {
+  color: #e0e0e0;
+}
+
+/* Dialog 样式 */
+.dark .el-dialog {
+  background-color: #2d2d2d;
+  border: 1px solid #3d3d3d;
+}
+
+.dark .el-dialog__header,
+.dark .el-dialog__title {
+  color: #e0e0e0;
+}
+
+.dark .el-dialog__body {
+  color: #e0e0e0;
+}
+
+.dark .el-dialog__footer {
+  border-top: 1px solid #3d3d3d;
+}
+
+/* Descriptions 样式 */
+.dark .el-descriptions {
+  --el-descriptions-item-bordered-label-background: #252525;
+  color: #e0e0e0;
+}
+
+.dark .el-descriptions__label {
+  color: #b0b0b0;
+}
+
+.dark .el-descriptions__content {
+  color: #e0e0e0;
+}
+
+.dark .el-descriptions__body {
+  background-color: #2d2d2d;
+}
+
+.dark .el-descriptions__table {
+  border-color: #3d3d3d;
+}
+
+.dark .el-descriptions__cell {
+  border-color: #3d3d3d;
+}
+
+/* Divider 样式 */
+.dark .el-divider {
+  --el-border-color-lighter: #3d3d3d;
+  border-color: #3d3d3d;
+}
+
+.dark .el-divider__text {
+  background-color: #2d2d2d;
+  color: #b0b0b0;
+}
+
+/* Breadcrumb 样式 */
+.dark .el-breadcrumb__inner,
+.dark .el-breadcrumb__separator {
+  color: #b0b0b0;
+}
+
+.dark .el-breadcrumb__inner a,
+.dark .el-breadcrumb__inner.is-link {
+  color: #909399;
+}
+
+.dark .el-breadcrumb__inner a:hover,
+.dark .el-breadcrumb__inner.is-link:hover {
+  color: #409EFF;
+}
+
+/* Tag 样式 */
+.dark .el-tag {
+  border-color: #4d4d4d;
+}
+
+.dark .el-tag--info {
+  background-color: #3d3d3d;
+  border-color: #4d4d4d;
+  color: #e0e0e0;
+}
+
+.dark .el-tag--success {
+  background-color: rgba(103, 194, 58, 0.2);
+  border-color: #67C23A;
+  color: #85ce61;
+}
+
+.dark .el-tag--warning {
+  background-color: rgba(230, 162, 60, 0.2);
+  border-color: #E6A23C;
+  color: #ebb563;
+}
+
+.dark .el-tag--danger {
+  background-color: rgba(245, 108, 108, 0.2);
+  border-color: #F56C6C;
+  color: #f78989;
+}
+
+/* Tooltip 样式 */
+.dark .el-tooltip__popper {
+  background-color: #252525;
+  color: #e0e0e0;
+  border: 1px solid #3d3d3d;
+}
+
+.dark .el-tooltip__popper[data-popper-placement^="top"] .el-popper__arrow::before {
+  border-top-color: #3d3d3d;
+}
+
+/* Message 样式 */
+.dark .el-message {
+  background-color: #2d2d2d;
+  border-color: #3d3d3d;
+}
+
+.dark .el-message__content {
+  color: #e0e0e0;
+}
+
+.dark .el-message--success {
+  background-color: rgba(103, 194, 58, 0.15);
+  border-color: #67C23A;
+}
+
+.dark .el-message--warning {
+  background-color: rgba(230, 162, 60, 0.15);
+  border-color: #E6A23C;
+}
+
+.dark .el-message--error {
+  background-color: rgba(245, 108, 108, 0.15);
+  border-color: #F56C6C;
+}
+
+/* MessageBox 样式 */
+.dark .el-message-box {
+  background-color: #2d2d2d;
+  border-color: #3d3d3d;
+}
+
+.dark .el-message-box__title {
+  color: #e0e0e0;
+}
+
+.dark .el-message-box__content {
+  color: #e0e0e0;
+}
+
+/* Pagination 样式 */
+.dark .el-pagination {
+  --el-text-color-primary: #e0e0e0;
+  --el-text-color-regular: #909399;
+}
+
+.dark .el-pagination button {
+  background-color: #3d3d3d;
+  color: #e0e0e0;
+}
+
+.dark .el-pagination button:hover {
+  color: #409EFF;
+}
+
+.dark .el-pagination .el-pager li {
+  background-color: #3d3d3d;
+  color: #e0e0e0;
+}
+
+.dark .el-pagination .el-pager li:hover {
+  color: #409EFF;
+}
+
+.dark .el-pagination .el-pager li.active {
+  background-color: #409EFF;
+  color: #fff;
+}
+
+.dark .el-pagination .el-select .el-input__wrapper {
+  background-color: #3d3d3d;
+}
+
+/* Dropdown 样式 */
+.dark .el-dropdown-menu {
+  background-color: #2d2d2d;
+  border-color: #3d3d3d;
+}
+
+.dark .el-dropdown-menu__item {
+  color: #e0e0e0;
+}
+
+.dark .el-dropdown-menu__item:hover {
+  background-color: #3d3d3d;
+  color: #409EFF;
+}
+
+.dark .el-dropdown-menu__item.is-disabled {
+  color: #6c6c6c;
+}
+
+/* Badge 样式 */
+.dark .el-badge__content {
+  background-color: #f56c6c;
+  color: #fff;
+  border-color: #2d2d2d;
+}
+
+/* Avatar 样式 */
+.dark .el-avatar {
+  background-color: #3d3d3d;
+  color: #e0e0e0;
+}
+
+/* Space 样式 */
+.dark .el-space {
+  color: #e0e0e0;
+}
+
+/* Loading 样式 */
+.dark .el-loading-mask {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+.dark .el-loading-spinner .el-loading-text {
+  color: #e0e0e0;
+}
+
+/* 自定义类 */
+.dark .stat-value {
+  color: #f0f0f0 !important;
+}
+
+.dark .stat-label {
+  color: #b0b0b0 !important;
+}
+
+/* 暗色主题 - 登录页面 */
+.dark .login-container {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.dark .login-box {
+  background: #2d2d2d;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.dark .login-button {
+  background: #4a5568 !important;
+}
+
+.dark .login-button:hover {
+  background: #5a6578 !important;
+}
+
+/* 图表暗色主题适配 */
+.dark [class*="echarts"] {
+  background: transparent !important;
+}
+
+/* Settings 页面特殊样式 */
+.dark .settings .el-card {
+  background: #2d2d2d;
+}
+
+.dark .settings .el-tabs__header {
+  background-color: transparent;
+}
+
+.dark .form-item-tip {
+  color: #909399;
+}
+
+.dark .about-section h3 {
+  color: #e0e0e0;
+}
+
+.dark .about-section li {
+  color: #b0b0b0;
+  border-bottom-color: #3d3d3d;
+}
+
+.dark .about-section li:before {
+  color: #409EFF;
+}
+
+/* 过渡效果 */
+.main-layout,
+.header,
+.main-content,
+.el-card,
+.el-table,
+.el-button,
+.el-input__wrapper,
+.el-tabs,
+.el-tabs__item,
+.login-container,
+.login-box {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
