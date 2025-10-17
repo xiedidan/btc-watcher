@@ -190,6 +190,205 @@ html.dark .el-dropdown-menu__item:hover {
   background-color: rgba(64, 158, 255, 0.1);
 }
 
+/* 修复暗色主题UI组件亮度问题 */
+
+/* 1. 禁用按钮样式 - 系统设置通知渠道优先级按钮 */
+html.dark .el-button.is-disabled,
+html.dark .el-button.is-disabled:hover,
+html.dark .el-button.is-disabled:focus {
+  background-color: var(--input-bg);
+  border-color: var(--border-color);
+  color: var(--text-tertiary);
+}
+
+/* 2. 下拉菜单输入框 - 降低亮度 */
+html.dark .el-select .el-input__wrapper {
+  background-color: var(--input-bg);
+  box-shadow: 0 0 0 1px var(--input-border) inset;
+}
+
+html.dark .el-select .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--border-color) inset;
+}
+
+html.dark .el-select .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+}
+
+/* 3. 切换按钮(Switch)的圆点和背景 - 降低亮度 */
+html.dark .el-switch__core {
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+}
+
+html.dark .el-switch__core .el-switch__action {
+  background-color: #d0d0d0;
+}
+
+html.dark .el-switch.is-checked .el-switch__core {
+  background-color: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+}
+
+html.dark .el-switch.is-checked .el-switch__core .el-switch__action {
+  background-color: #ffffff;
+}
+
+/* 4. 所有输入框边框 - 降低对比度 */
+html.dark .el-input__wrapper {
+  background-color: var(--input-bg);
+  box-shadow: 0 0 0 1px var(--input-border) inset;
+}
+
+html.dark .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--border-color) inset;
+}
+
+html.dark .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset !important;
+}
+
+/* 5. 表格边框 - 降低亮度 */
+html.dark .el-table {
+  --el-table-border-color: var(--border-color);
+}
+
+html.dark .el-table th,
+html.dark .el-table td {
+  border-color: var(--border-color);
+}
+
+html.dark .el-table--border th,
+html.dark .el-table--border td {
+  border-color: var(--border-color);
+}
+
+html.dark .el-table--border .el-table__inner-wrapper::after,
+html.dark .el-table--border::before,
+html.dark .el-table--border::after {
+  background-color: var(--border-color);
+}
+
+/* 6. 描述列表(Descriptions)边框和字体 - 降低亮度 */
+html.dark .el-descriptions {
+  --el-descriptions-item-bordered-label-background: var(--input-bg);
+  background-color: var(--card-bg);
+}
+
+html.dark .el-descriptions__label,
+html.dark .el-descriptions__content {
+  border-color: var(--border-color);
+  color: var(--text-primary) !important;
+}
+
+html.dark .el-descriptions__label {
+  background-color: var(--input-bg);
+}
+
+html.dark .el-descriptions--bordered .el-descriptions__cell {
+  border-color: var(--border-color);
+}
+
+/* 7. 进度条空白部分 - 降低亮度 */
+html.dark .el-progress-bar__outer {
+  background-color: var(--input-bg);
+}
+
+html.dark .el-progress__text {
+  color: var(--text-primary);
+}
+
+/* 其他Element Plus组件暗色优化 */
+
+/* InputNumber加减按钮 */
+html.dark .el-input-number .el-input-number__decrease,
+html.dark .el-input-number .el-input-number__increase {
+  background-color: var(--input-bg);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+}
+
+html.dark .el-input-number .el-input-number__decrease:hover,
+html.dark .el-input-number .el-input-number__increase:hover {
+  color: var(--el-color-primary);
+}
+
+/* Textarea */
+html.dark .el-textarea__inner {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border-color: var(--input-border);
+}
+
+html.dark .el-textarea__inner:hover {
+  border-color: var(--border-color);
+}
+
+html.dark .el-textarea__inner:focus {
+  border-color: var(--el-color-primary);
+}
+
+/* TimePicker和DatePicker */
+html.dark .el-time-panel,
+html.dark .el-picker-panel {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+html.dark .el-time-panel__content,
+html.dark .el-picker-panel__body {
+  color: var(--text-primary);
+}
+
+/* Checkbox */
+html.dark .el-checkbox__inner {
+  background-color: var(--input-bg);
+  border-color: var(--border-color);
+}
+
+html.dark .el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+}
+
+/* Tag */
+html.dark .el-tag {
+  border-color: var(--border-color);
+}
+
+/* Dialog */
+html.dark .el-dialog {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+html.dark .el-dialog__header {
+  border-bottom: 1px solid var(--border-color);
+}
+
+html.dark .el-dialog__title {
+  color: var(--text-primary);
+}
+
+html.dark .el-dialog__body {
+  color: var(--text-primary);
+}
+
+/* Form表单 */
+html.dark .el-form-item__label {
+  color: var(--text-primary);
+}
+
+/* Divider */
+html.dark .el-divider {
+  border-color: var(--border-color);
+}
+
+html.dark .el-divider__text {
+  background-color: var(--card-bg);
+  color: var(--text-primary);
+}
+
 /* 全局调整 Element Plus 组件间距 */
 .el-card {
   --el-card-padding: 12px;
