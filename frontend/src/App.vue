@@ -100,6 +100,7 @@ html.dark .el-select-dropdown {
 }
 
 html.dark .el-select-dropdown__item {
+  background-color: transparent;
   color: var(--text-primary);
 }
 

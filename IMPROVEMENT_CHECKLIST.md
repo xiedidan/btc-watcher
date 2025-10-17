@@ -372,6 +372,20 @@ html.dark .el-select__wrapper {
 }
 ```
 
+#### 2.2.20 下拉菜单项普通状态背景过亮 (未hover未选中) 🆕 ✅
+**问题**: 下拉菜单项在非hover、非选中的普通状态下背景过亮
+**HTML元素**: `<li class="el-select-dropdown__item">` (无is-selected, 无is-hovering)
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: ✅ 已修复
+**分析**: 之前只修复了hover和selected状态，遗漏了普通状态的背景色设置，导致继承了Element Plus的默认亮色背景
+**修复方案**:
+```css
+html.dark .el-select-dropdown__item {
+  background-color: transparent;
+  color: var(--text-primary);
+}
+```
+
 ### 2.3 其他暗色主题优化
 - [ ] 检查卡片阴影效果
 - [ ] 检查按钮hover状态
@@ -524,6 +538,9 @@ html.dark .el-select__wrapper {
   * 下拉菜单已选中项背景过亮(未hover时) ✅
   * 下拉菜单wrapper背景过亮 ✅
   * 额外修复了所有tag颜色变体(success/warning/danger/info) ✅
+- 修复最后一个老大难问题:
+  * 下拉菜单项普通状态背景过亮(未hover未选中) ✅
+  * 根本原因：遗漏了el-select-dropdown__item普通状态的背景色设置 ✅
 
 ---
 
