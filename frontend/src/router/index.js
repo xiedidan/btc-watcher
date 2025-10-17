@@ -40,6 +40,12 @@ const router = createRouter({
           meta: { title: 'nav.signals' }
         },
         {
+          path: 'charts',
+          name: 'charts',
+          component: () => import('@/views/Charts.vue'),
+          meta: { title: 'nav.charts' }
+        },
+        {
           path: 'proxies',
           name: 'proxies',
           component: () => import('@/views/Proxies.vue'),

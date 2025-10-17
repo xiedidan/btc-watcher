@@ -38,6 +38,7 @@
     "dashboard": "仪表盘",
     "strategies": "策略管理",
     "signals": "信号列表",
+    "charts": "图表分析",
     "proxies": "代理管理",
     "monitoring": "系统监控",
     "settings": "系统设置"
@@ -270,6 +271,21 @@
     "priceChange24h": "Price Change 24h",
     "fetchListFailed": "获取信号列表失败",
     "fetchDetailFailed": "获取信号详情失败"
+  },
+  "charts": {
+    "title": "图表分析",
+    "pairList": "货币对列表",
+    "searchPair": "搜索货币对",
+    "signalDetails": "信号详情",
+    "allSignals": "全部信号",
+    "buySignals": "买入信号",
+    "sellSignals": "卖出信号",
+    "buy": "买入",
+    "sell": "卖出",
+    "strategy": "策略",
+    "price": "价格",
+    "strength": "强度",
+    "noSignals": "暂无信号"
   },
   "proxy": {
     "title": "网络代理管理",

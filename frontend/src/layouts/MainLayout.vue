@@ -30,6 +30,11 @@
           <template #title>{{ $t('nav.signals') }}</template>
         </el-menu-item>
 
+        <el-menu-item index="/charts">
+          <el-icon><TrendCharts /></el-icon>
+          <template #title>{{ $t('nav.charts') }}</template>
+        </el-menu-item>
+
         <el-menu-item index="/proxies">
           <el-icon><Connection /></el-icon>
           <template #title>{{ $t('nav.proxies') }}</template>
@@ -168,7 +173,8 @@ import {
   Bell,
   Moon,
   Sunny,
-  Platform
+  Platform,
+  TrendCharts
 } from '@element-plus/icons-vue'
 
 const router = useRouter()

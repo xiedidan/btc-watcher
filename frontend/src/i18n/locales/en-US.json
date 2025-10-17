@@ -38,6 +38,7 @@
     "dashboard": "Dashboard",
     "strategies": "Strategies",
     "signals": "Signals",
+    "charts": "Charts Analysis",
     "proxies": "Proxies",
     "monitoring": "Monitoring",
     "settings": "Settings"
@@ -270,6 +271,21 @@
     "priceChange24h": "Price Change 24h",
     "fetchListFailed": "Failed to fetch signal list",
     "fetchDetailFailed": "Failed to fetch signal detail"
+  },
+  "charts": {
+    "title": "Charts Analysis",
+    "pairList": "Pair List",
+    "searchPair": "Search pair",
+    "signalDetails": "Signal Details",
+    "allSignals": "All Signals",
+    "buySignals": "Buy Signals",
+    "sellSignals": "Sell Signals",
+    "buy": "Buy",
+    "sell": "Sell",
+    "strategy": "Strategy",
+    "price": "Price",
+    "strength": "Strength",
+    "noSignals": "No signals"
   },
   "proxy": {
     "title": "Network Proxy Management",
