@@ -212,6 +212,60 @@ html.dark .el-progress__text {
 }
 ```
 
+#### 2.2.7 锁定的Input输入框两端亮色区域 🆕
+**问题**: 禁用/只读状态的Input输入框两端（可能是padding区域）有小块亮色区域
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: 🔄 待修复
+**修复方案**:
+```css
+html.dark .el-input.is-disabled .el-input__wrapper,
+html.dark .el-input__wrapper.is-disabled {
+  background-color: var(--input-bg) !important;
+  box-shadow: 0 0 0 1px var(--input-border) inset !important;
+}
+```
+
+#### 2.2.8 下拉菜单收起后显示值部分亮色 🆕
+**问题**: el-select下拉菜单收起后，显示选中值的input区域背景是亮色的
+**位置**: 全局样式 `frontend/src/App.vue`
+**状态**: 🔄 待修复
+**修复方案**:
+```css
+html.dark .el-select .el-input.is-focus .el-input__wrapper {
+  background-color: var(--input-bg) !important;
+}
+
+html.dark .el-select .el-input__inner {
+  color: var(--text-primary);
+}
+```
+
+#### 2.2.9 系统健康状态进度条空白部分区分度不够 🆕
+**问题**: 进度条未填充部分与背景色区分度不够，但不能变成亮色
+**位置**: `frontend/src/views/Monitoring.vue` 或全局样式
+**状态**: 🔄 待修复
+**修复方案**:
+```css
+html.dark .el-progress-bar__outer {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+```
+
+#### 2.2.10 统计卡片（今日信号、最后更新）背景太亮 🆕
+**问题**: Dashboard中的统计框（如今日信号、最后更新）背景色太亮
+**位置**: `frontend/src/views/Dashboard.vue` 或全局样式
+**状态**: 🔄 待修复
+**修复方案**:
+```css
+html.dark .el-statistic {
+  background-color: transparent;
+}
+
+html.dark .el-descriptions__body {
+  background-color: var(--card-bg);
+}
+```
+
 ### 2.3 其他暗色主题优化
 - [ ] 检查卡片阴影效果
 - [ ] 检查按钮hover状态

@@ -289,13 +289,38 @@ html.dark .el-descriptions--bordered .el-descriptions__cell {
   border-color: var(--border-color);
 }
 
-/* 7. 进度条空白部分 - 降低亮度 */
+/* 7. 进度条空白部分区分度增强 - 使用半透明白色提供对比度但不刺眼 */
 html.dark .el-progress-bar__outer {
-  background-color: var(--input-bg);
+  background-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 html.dark .el-progress__text {
   color: var(--text-primary);
+}
+
+/* 8. 禁用/只读Input输入框两端亮色区域修复 */
+html.dark .el-input.is-disabled .el-input__wrapper,
+html.dark .el-input__wrapper.is-disabled {
+  background-color: var(--input-bg) !important;
+  box-shadow: 0 0 0 1px var(--input-border) inset !important;
+}
+
+/* 9. 下拉菜单收起后显示值区域修复 */
+html.dark .el-select .el-input.is-focus .el-input__wrapper {
+  background-color: var(--input-bg) !important;
+}
+
+html.dark .el-select .el-input__inner {
+  color: var(--text-primary);
+}
+
+/* 10. 统计卡片和描述列表背景修复 */
+html.dark .el-statistic {
+  background-color: transparent;
+}
+
+html.dark .el-descriptions__body {
+  background-color: var(--card-bg);
 }
 
 /* 其他Element Plus组件暗色优化 */
