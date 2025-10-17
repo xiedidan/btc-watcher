@@ -3,15 +3,15 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>策略管理</span>
+          <span>{{ t('strategy.title') }}</span>
           <el-space>
             <el-button size="small" @click="$router.push('/drafts')">
               <el-icon><Document /></el-icon>
-              草稿管理
+              {{ t('strategy.drafts') }}
             </el-button>
             <el-button type="primary" @click="handleOpenCreateDialog">
               <el-icon><Plus /></el-icon>
-              创建策略
+              {{ t('strategy.create') }}
             </el-button>
           </el-space>
         </div>
@@ -19,18 +19,18 @@
 
       <!-- 搜索栏 -->
       <el-form :inline="true" class="search-form">
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="全部" clearable @change="fetchData">
-            <el-option label="全部" value="" />
-            <el-option label="运行中" value="running" />
-            <el-option label="已停止" value="stopped" />
-            <el-option label="错误" value="error" />
+        <el-form-item :label="t('strategy.status')">
+          <el-select v-model="searchForm.status" :placeholder="t('strategy.all')" clearable @change="fetchData">
+            <el-option :label="t('strategy.all')" value="" />
+            <el-option :label="t('strategy.running')" value="running" />
+            <el-option :label="t('strategy.stopped')" value="stopped" />
+            <el-option :label="t('strategy.error')" value="error" />
           </el-select>
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="fetchData">查询</el-button>
-          <el-button @click="resetSearch">重置</el-button>
+          <el-button type="primary" @click="fetchData">{{ t('strategy.query') }}</el-button>
+          <el-button @click="resetSearch">{{ t('strategy.reset') }}</el-button>
         </el-form-item>
       </el-form>
 
@@ -43,12 +43,12 @@
       >
         <el-table-column type="selection" width="55" />
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="策略名称" min-width="180" />
-        <el-table-column prop="strategy_class" label="策略类" width="150" />
-        <el-table-column prop="exchange" label="交易所" width="120" />
-        <el-table-column prop="port" label="端口" width="100" />
+        <el-table-column prop="name" :label="t('strategy.name')" min-width="180" />
+        <el-table-column prop="strategy_class" :label="t('strategy.strategyClass')" width="150" />
+        <el-table-column prop="exchange" :label="t('strategy.exchange')" width="120" />
+        <el-table-column prop="port" :label="t('strategy.port')" width="100" />
 
-        <el-table-column label="健康分数" width="150">
+        <el-table-column :label="t('strategy.healthScore')" width="150">
           <template #default="{ row }">
             <div style="display: flex; align-items: center; gap: 8px">
               <el-progress
@@ -58,22 +58,22 @@
                 :show-text="false"
                 style="flex: 1"
               />
-              <span style="font-size: 12px; min-width: 28px">{{ calculateHealthScore(row) }}分</span>
+              <span style="font-size: 12px; min-width: 28px">{{ calculateHealthScore(row) }}{{ t('strategy.score') }}</span>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="100">
+        <el-table-column :label="t('strategy.status')" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'running'" type="success">运行中</el-tag>
-            <el-tag v-else-if="row.status === 'stopped'" type="info">已停止</el-tag>
-            <el-tag v-else type="danger">错误</el-tag>
+            <el-tag v-if="row.status === 'running'" type="success">{{ t('strategy.running') }}</el-tag>
+            <el-tag v-else-if="row.status === 'stopped'" type="info">{{ t('strategy.stopped') }}</el-tag>
+            <el-tag v-else type="danger">{{ t('strategy.error') }}</el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column prop="created_at" label="创建时间" width="180" />
+        <el-table-column prop="created_at" :label="t('strategy.createdAt')" width="180" />
 
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column :label="t('common.edit')" width="220" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'stopped'"
@@ -81,7 +81,7 @@
               size="small"
               @click="handleStart(row)"
             >
-              启动
+              {{ t('strategy.start') }}
             </el-button>
             <el-button
               v-else
@@ -89,21 +89,21 @@
               size="small"
               @click="handleStop(row)"
             >
-              停止
+              {{ t('strategy.stop') }}
             </el-button>
             <el-button
               type="primary"
               size="small"
               @click="handleView(row)"
             >
-              查看
+              {{ t('common.detail') }}
             </el-button>
             <el-button
               type="danger"
               size="small"
               @click="handleDelete(row)"
             >
-              删除
+              {{ t('common.delete') }}
             </el-button>
           </template>
         </el-table-column>
@@ -113,23 +113,23 @@
     <!-- 创建策略对话框 -->
     <el-dialog
       v-model="showCreateDialog"
-      title="创建策略"
+      :title="t('strategy.create')"
       width="600px"
     >
       <!-- 草稿管理 -->
       <el-alert
         v-if="draftKey"
-        title="正在编辑草稿"
+        :title="t('strategy.draftEditing')"
         type="info"
         :closable="false"
         style="margin-bottom: 16px"
       >
         <template #default>
           <div style="display: flex; justify-content: space-between; align-items: center">
-            <span style="font-size: 12px">草稿会每30秒自动保存</span>
+            <span style="font-size: 12px">{{ t('strategy.autoSaveTip') }}</span>
             <div>
-              <el-button size="small" @click="saveDraft">立即保存草稿</el-button>
-              <el-button size="small" type="danger" @click="handleClearDraft">清除草稿</el-button>
+              <el-button size="small" @click="saveDraft">{{ t('strategy.saveNow') }}</el-button>
+              <el-button size="small" type="danger" @click="handleClearDraft">{{ t('strategy.clearDraft') }}</el-button>
             </div>
           </div>
         </template>
@@ -141,14 +141,14 @@
         :rules="createRules"
         label-width="120px"
       >
-        <el-form-item label="策略名称" prop="name">
-          <el-input v-model="createForm.name" placeholder="请输入策略名称" />
+        <el-form-item :label="t('strategy.name')" prop="name">
+          <el-input v-model="createForm.name" :placeholder="t('strategy.enterName')" />
         </el-form-item>
 
         <!-- 策略文件上传 -->
-        <el-divider content-position="left">策略代码</el-divider>
+        <el-divider content-position="left">{{ t('strategy.strategyCode') }}</el-divider>
 
-        <el-form-item label="策略文件" prop="strategy_file">
+        <el-form-item :label="t('strategy.strategyFile')" prop="strategy_file">
           <div style="width: 100%">
             <el-upload
               ref="uploadRef"
@@ -164,19 +164,19 @@
             >
               <el-button type="primary" size="small">
                 <el-icon><Upload /></el-icon>
-                上传策略文件 (.py)
+                {{ t('strategy.uploadStrategy') }}
               </el-button>
             </el-upload>
             <div style="margin-top: 8px; font-size: 12px; color: #909399">
-              支持上传Python策略文件，系统将自动扫描策略类
+              {{ t('strategy.uploadTip') }}
             </div>
           </div>
         </el-form-item>
 
-        <el-form-item label="策略类" prop="strategy_class">
+        <el-form-item :label="t('strategy.strategyClass')" prop="strategy_class">
           <el-select
             v-model="createForm.strategy_class"
-            placeholder="请先上传策略文件"
+            :placeholder="t('strategy.selectFile')"
             :disabled="availableStrategyClasses.length === 0"
             style="width: 100%"
           >
@@ -188,25 +188,25 @@
             >
               <div style="display: flex; justify-content: space-between">
                 <span>{{ cls.name }}</span>
-                <span style="color: #8492a6; font-size: 12px">{{ cls.description || '无描述' }}</span>
+                <span style="color: #8492a6; font-size: 12px">{{ cls.description || t('strategy.noDescription') }}</span>
               </div>
             </el-option>
           </el-select>
           <div v-if="strategyFileInfo" style="margin-top: 8px; font-size: 12px; color: #67C23A">
-            ✓ 已加载: {{ strategyFileInfo.filename }} ({{ availableStrategyClasses.length }} 个策略类)
+            ✓ {{ t('strategy.loaded') }}: {{ strategyFileInfo.filename }} ({{ availableStrategyClasses.length }} {{ t('strategy.classesFound') }})
           </div>
         </el-form-item>
 
-        <el-form-item label="交易所" prop="exchange">
-          <el-select v-model="createForm.exchange" placeholder="请选择交易所">
+        <el-form-item :label="t('strategy.exchange')" prop="exchange">
+          <el-select v-model="createForm.exchange" :placeholder="t('strategy.selectExchange')">
             <el-option label="Binance" value="binance" />
             <el-option label="OKX" value="okx" />
             <el-option label="Huobi" value="huobi" />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="时间周期" prop="timeframe">
-          <el-select v-model="createForm.timeframe" placeholder="请选择时间周期">
+        <el-form-item :label="t('strategy.timeframe')" prop="timeframe">
+          <el-select v-model="createForm.timeframe" :placeholder="t('strategy.selectTimeframe')">
             <el-option label="1分钟" value="1m" />
             <el-option label="5分钟" value="5m" />
             <el-option label="15分钟" value="15m" />
@@ -216,13 +216,13 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="交易对" prop="pair_whitelist">
+        <el-form-item :label="t('strategy.tradingPairs')" prop="pair_whitelist">
           <el-select
             v-model="createForm.pair_whitelist"
             multiple
             filterable
             allow-create
-            placeholder="请输入交易对"
+            :placeholder="t('strategy.enterPairs')"
           >
             <el-option label="BTC/USDT" value="BTC/USDT" />
             <el-option label="ETH/USDT" value="ETH/USDT" />
@@ -230,13 +230,13 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="模拟交易">
+        <el-form-item :label="t('strategy.dryRun')">
           <el-switch v-model="createForm.dry_run" />
         </el-form-item>
 
-        <el-divider content-position="left">信号强度阈值配置</el-divider>
+        <el-divider content-position="left">{{ t('strategy.thresholds') }}</el-divider>
 
-        <el-form-item label="强烈信号阈值" label-width="140px">
+        <el-form-item :label="t('strategy.strongThreshold')" label-width="140px">
           <el-row :gutter="10" style="width: 100%">
             <el-col :span="12">
               <el-input-number
@@ -249,15 +249,15 @@
               />
             </el-col>
             <el-col :span="12">
-              <el-tag type="danger" size="small">🔴 P2立即通知</el-tag>
+              <el-tag type="danger" size="small">🔴 {{ t('strategy.p2Immediate') }}</el-tag>
             </el-col>
           </el-row>
           <div style="margin-top: 4px; font-size: 12px; color: #909399">
-            信号强度 ≥ {{ createForm.signal_thresholds.strong }} 时发送P2级通知
+            {{ t('strategy.strongThresholdTip', { threshold: createForm.signal_thresholds.strong }) }}
           </div>
         </el-form-item>
 
-        <el-form-item label="中等信号阈值" label-width="140px">
+        <el-form-item :label="t('strategy.mediumThreshold')" label-width="140px">
           <el-row :gutter="10" style="width: 100%">
             <el-col :span="12">
               <el-input-number
@@ -270,15 +270,15 @@
               />
             </el-col>
             <el-col :span="12">
-              <el-tag type="warning" size="small">🟠 P1通知</el-tag>
+              <el-tag type="warning" size="small">🟠 {{ t('strategy.p1Notify') }}</el-tag>
             </el-col>
           </el-row>
           <div style="margin-top: 4px; font-size: 12px; color: #909399">
-            信号强度 ≥ {{ createForm.signal_thresholds.medium }} 时发送P1级通知
+            {{ t('strategy.mediumThresholdTip', { threshold: createForm.signal_thresholds.medium }) }}
           </div>
         </el-form-item>
 
-        <el-form-item label="弱信号阈值" label-width="140px">
+        <el-form-item :label="t('strategy.weakThreshold')" label-width="140px">
           <el-row :gutter="10" style="width: 100%">
             <el-col :span="12">
               <el-input-number
@@ -291,15 +291,15 @@
               />
             </el-col>
             <el-col :span="12">
-              <el-tag type="info" size="small">🟡 P0批量通知</el-tag>
+              <el-tag type="info" size="small">🟡 {{ t('strategy.p0Batch') }}</el-tag>
             </el-col>
           </el-row>
           <div style="margin-top: 4px; font-size: 12px; color: #909399">
-            信号强度 ≥ {{ createForm.signal_thresholds.weak }} 时发送P0级通知
+            {{ t('strategy.weakThresholdTip', { threshold: createForm.signal_thresholds.weak }) }}
           </div>
         </el-form-item>
 
-        <el-form-item label="阈值预览" label-width="140px">
+        <el-form-item :label="t('strategy.thresholdPreview')" label-width="140px">
           <div style="width: 100%">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
               <span style="font-size: 12px; width: 30px">0.0</span>
@@ -311,19 +311,19 @@
               <span style="font-size: 12px; width: 30px">1.0</span>
             </div>
             <div style="display: flex; gap: 16px; font-size: 12px; color: #606266; margin-top: 16px">
-              <span>⚪ 忽略 (< {{ createForm.signal_thresholds.weak }})</span>
-              <span>🟡 弱 ({{ createForm.signal_thresholds.weak }} - {{ createForm.signal_thresholds.medium }})</span>
-              <span>🟠 中 ({{ createForm.signal_thresholds.medium }} - {{ createForm.signal_thresholds.strong }})</span>
-              <span>🔴 强 (≥ {{ createForm.signal_thresholds.strong }})</span>
+              <span>⚪ {{ t('strategy.ignore') }} (< {{ createForm.signal_thresholds.weak }})</span>
+              <span>🟡 {{ t('strategy.weak') }} ({{ createForm.signal_thresholds.weak }} - {{ createForm.signal_thresholds.medium }})</span>
+              <span>🟠 {{ t('strategy.medium') }} ({{ createForm.signal_thresholds.medium }} - {{ createForm.signal_thresholds.strong }})</span>
+              <span>🔴 {{ t('strategy.strong') }} (≥ {{ createForm.signal_thresholds.strong }})</span>
             </div>
           </div>
         </el-form-item>
       </el-form>
 
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
+        <el-button @click="showCreateDialog = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="submitting" @click="handleCreate">
-          创建
+          {{ t('common.create') }}
         </el-button>
       </template>
     </el-dialog>
@@ -331,7 +331,7 @@
     <!-- 策略详情对话框 -->
     <el-dialog
       v-model="showDetailDialog"
-      title="策略详情"
+      :title="t('strategy.detail')"
       width="800px"
       destroy-on-close
     >
@@ -339,16 +339,16 @@
         <!-- 基础信息和运行状态 -->
         <el-row :gutter="16" style="margin-bottom: 20px">
           <el-col :span="12">
-            <el-card shadow="never" header="基础信息">
+            <el-card shadow="never" :header="t('strategy.basicInfo')">
               <el-descriptions :column="1" size="small">
-                <el-descriptions-item label="策略ID">{{ currentStrategy.id }}</el-descriptions-item>
-                <el-descriptions-item label="策略名称">{{ currentStrategy.name }}</el-descriptions-item>
-                <el-descriptions-item label="策略类型">信号监控策略</el-descriptions-item>
-                <el-descriptions-item label="版本">{{ currentStrategy.version }}</el-descriptions-item>
-                <el-descriptions-item label="创建时间">
+                <el-descriptions-item :label="t('strategy.strategyId')">{{ currentStrategy.id }}</el-descriptions-item>
+                <el-descriptions-item :label="t('strategy.name')">{{ currentStrategy.name }}</el-descriptions-item>
+                <el-descriptions-item :label="t('strategy.strategyType')">{{ t('strategy.signalMonitoring') }}</el-descriptions-item>
+                <el-descriptions-item :label="t('strategy.version')">{{ currentStrategy.version }}</el-descriptions-item>
+                <el-descriptions-item :label="t('strategy.createdAt')">
                   {{ formatDateTime(currentStrategy.created_at) }}
                 </el-descriptions-item>
-                <el-descriptions-item label="最后修改">
+                <el-descriptions-item :label="t('strategy.lastModified')">
                   {{ formatDateTime(currentStrategy.updated_at) }}
                 </el-descriptions-item>
               </el-descriptions>
@@ -356,14 +356,14 @@
           </el-col>
 
           <el-col :span="12">
-            <el-card shadow="never" header="运行状态">
+            <el-card shadow="never" :header="t('strategy.runningStatus')">
               <el-descriptions :column="1" size="small">
-                <el-descriptions-item label="状态">
-                  <el-tag v-if="currentStrategy.status === 'running'" type="success">运行中</el-tag>
-                  <el-tag v-else-if="currentStrategy.status === 'stopped'" type="info">已停止</el-tag>
-                  <el-tag v-else type="danger">错误</el-tag>
+                <el-descriptions-item :label="t('strategy.status')">
+                  <el-tag v-if="currentStrategy.status === 'running'" type="success">{{ t('strategy.running') }}</el-tag>
+                  <el-tag v-else-if="currentStrategy.status === 'stopped'" type="info">{{ t('strategy.stopped') }}</el-tag>
+                  <el-tag v-else type="danger">{{ t('strategy.error') }}</el-tag>
                 </el-descriptions-item>
-                <el-descriptions-item label="健康分数">
+                <el-descriptions-item :label="t('strategy.healthScore')">
                   <div style="display: flex; align-items: center; gap: 8px">
                     <el-progress
                       :percentage="calculateHealthScore(currentStrategy)"
@@ -375,19 +375,19 @@
                     <span>{{ calculateHealthScore(currentStrategy) }}/100</span>
                   </div>
                 </el-descriptions-item>
-                <el-descriptions-item label="运行时长" v-if="currentStrategy.status === 'running'">
+                <el-descriptions-item :label="t('strategy.uptime')" v-if="currentStrategy.status === 'running'">
                   {{ calculateUptime(currentStrategy.started_at) }}
                 </el-descriptions-item>
-                <el-descriptions-item label="启动时间" v-if="currentStrategy.started_at">
+                <el-descriptions-item :label="t('strategy.startedAt')" v-if="currentStrategy.started_at">
                   {{ formatDateTime(currentStrategy.started_at) }}
                 </el-descriptions-item>
-                <el-descriptions-item label="停止时间" v-if="currentStrategy.stopped_at">
+                <el-descriptions-item :label="t('strategy.stoppedAt')" v-if="currentStrategy.stopped_at">
                   {{ formatDateTime(currentStrategy.stopped_at) }}
                 </el-descriptions-item>
-                <el-descriptions-item label="PID" v-if="currentStrategy.process_id">
+                <el-descriptions-item :label="t('strategy.pid')" v-if="currentStrategy.process_id">
                   {{ currentStrategy.process_id }}
                 </el-descriptions-item>
-                <el-descriptions-item label="端口" v-if="currentStrategy.port">
+                <el-descriptions-item :label="t('strategy.port')" v-if="currentStrategy.port">
                   {{ currentStrategy.port }}
                 </el-descriptions-item>
               </el-descriptions>
@@ -396,72 +396,72 @@
         </el-row>
 
         <!-- 配置信息 -->
-        <el-card shadow="never" header="配置信息" style="margin-bottom: 20px">
+        <el-card shadow="never" :header="t('strategy.configInfo')" style="margin-bottom: 20px">
           <el-descriptions :column="2" size="small">
-            <el-descriptions-item label="策略类">
+            <el-descriptions-item :label="t('strategy.strategyClass')">
               {{ currentStrategy.strategy_class }}
             </el-descriptions-item>
-            <el-descriptions-item label="交易所">
+            <el-descriptions-item :label="t('strategy.exchange')">
               {{ currentStrategy.exchange }}
             </el-descriptions-item>
-            <el-descriptions-item label="时间周期">
+            <el-descriptions-item :label="t('strategy.timeframe')">
               {{ currentStrategy.timeframe }}
             </el-descriptions-item>
-            <el-descriptions-item label="模拟交易">
+            <el-descriptions-item :label="t('strategy.dryRun')">
               <el-tag :type="currentStrategy.dry_run ? 'success' : 'warning'">
-                {{ currentStrategy.dry_run ? '是' : '否' }}
+                {{ currentStrategy.dry_run ? t('common.yes') : t('common.no') }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="交易对" :span="2">
+            <el-descriptions-item :label="t('strategy.tradingPairs')" :span="2">
               <el-space wrap>
                 <el-tag v-for="pair in currentStrategy.pair_whitelist" :key="pair" size="small">
                   {{ pair }}
                 </el-tag>
               </el-space>
             </el-descriptions-item>
-            <el-descriptions-item label="最大持仓数">
+            <el-descriptions-item :label="t('strategy.maxTrades')">
               {{ currentStrategy.max_open_trades }}
             </el-descriptions-item>
-            <el-descriptions-item label="钱包金额" v-if="currentStrategy.dry_run">
+            <el-descriptions-item :label="t('strategy.wallet')" v-if="currentStrategy.dry_run">
               {{ currentStrategy.dry_run_wallet }} USDT
             </el-descriptions-item>
           </el-descriptions>
 
-          <el-divider content-position="left">信号强度阈值</el-divider>
+          <el-divider content-position="left">{{ t('strategy.thresholds') }}</el-divider>
           <el-descriptions :column="3" size="small" v-if="currentStrategy.signal_thresholds">
-            <el-descriptions-item label="强信号">
+            <el-descriptions-item :label="t('strategy.strong')">
               ≥ {{ currentStrategy.signal_thresholds.strong || 0.8 }}
             </el-descriptions-item>
-            <el-descriptions-item label="中等信号">
+            <el-descriptions-item :label="t('strategy.medium')">
               ≥ {{ currentStrategy.signal_thresholds.medium || 0.6 }}
             </el-descriptions-item>
-            <el-descriptions-item label="弱信号">
+            <el-descriptions-item :label="t('strategy.weak')">
               ≥ {{ currentStrategy.signal_thresholds.weak || 0.4 }}
             </el-descriptions-item>
           </el-descriptions>
 
           <div v-if="currentStrategy.description" style="margin-top: 16px">
-            <el-divider content-position="left">策略描述</el-divider>
+            <el-divider content-position="left">{{ t('strategy.description') }}</el-divider>
             <p style="color: #606266; line-height: 1.6">{{ currentStrategy.description }}</p>
           </div>
         </el-card>
 
         <!-- 操作按钮 -->
         <div style="display: flex; justify-content: flex-end; gap: 8px">
-          <el-button @click="showDetailDialog = false">关闭</el-button>
+          <el-button @click="showDetailDialog = false">{{ t('common.close') }}</el-button>
           <el-button
             v-if="currentStrategy.status === 'stopped'"
             type="success"
             @click="handleStartFromDetail"
           >
-            启动策略
+            {{ t('strategy.start') }}
           </el-button>
           <el-button
             v-else-if="currentStrategy.status === 'running'"
             type="warning"
             @click="handleStopFromDetail"
           >
-            停止策略
+            {{ t('strategy.stop') }}
           </el-button>
         </div>
       </div>
@@ -473,9 +473,11 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Document } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import { useStrategyStore } from '@/stores/strategy'
 import { useUserStore } from '@/stores/user'
 
+const { t } = useI18n()
 const strategyStore = useStrategyStore()
 const userStore = useUserStore()
 
@@ -531,11 +533,11 @@ const createForm = reactive({
 })
 
 const createRules = {
-  name: [{ required: true, message: '请输入策略名称', trigger: 'blur' }],
-  strategy_class: [{ required: true, message: '请选择策略类', trigger: 'change' }],
-  exchange: [{ required: true, message: '请选择交易所', trigger: 'change' }],
-  timeframe: [{ required: true, message: '请选择时间周期', trigger: 'change' }],
-  pair_whitelist: [{ required: true, message: '请选择交易对', trigger: 'change' }]
+  name: [{ required: true, message: t('strategy.enterName'), trigger: 'blur' }],
+  strategy_class: [{ required: true, message: t('strategy.selectClass'), trigger: 'change' }],
+  exchange: [{ required: true, message: t('strategy.enterExchange'), trigger: 'change' }],
+  timeframe: [{ required: true, message: t('strategy.enterTimeframe'), trigger: 'change' }],
+  pair_whitelist: [{ required: true, message: t('strategy.enterPairs'), trigger: 'change' }]
 }
 
 // 文件上传处理函数
@@ -544,12 +546,12 @@ const beforeUpload = (file) => {
   const isLt10M = file.size / 1024 / 1024 < 10
 
   if (!isPython) {
-    ElMessage.error('只能上传 Python 文件（.py）')
+    ElMessage.error(t('strategy.onlyPython'))
     return false
   }
 
   if (!isLt10M) {
-    ElMessage.error('文件大小不能超过 10MB')
+    ElMessage.error(t('strategy.fileTooLarge'))
     return false
   }
 
@@ -558,7 +560,7 @@ const beforeUpload = (file) => {
 
 const handleUploadSuccess = (response, file, fileList) => {
   if (response.success) {
-    ElMessage.success('策略文件上传成功')
+    ElMessage.success(t('strategy.uploadSuccess'))
 
     // 保存文件信息
     strategyFileInfo.value = {
@@ -579,16 +581,16 @@ const handleUploadSuccess = (response, file, fileList) => {
     // 如果只有一个策略类，自动选中
     if (availableStrategyClasses.value.length === 1) {
       createForm.strategy_class = availableStrategyClasses.value[0].name
-      ElMessage.info('已自动选择唯一的策略类')
+      ElMessage.info(t('strategy.autoSelected'))
     }
   } else {
-    ElMessage.error(response.message || '文件上传失败')
+    ElMessage.error(response.message || t('strategy.uploadFailed'))
   }
 }
 
 const handleUploadError = (error, file) => {
   console.error('Upload error:', error)
-  ElMessage.error('文件上传失败，请重试')
+  ElMessage.error(t('strategy.uploadFailed'))
 }
 
 const fetchData = async () => {
@@ -597,7 +599,7 @@ const fetchData = async () => {
     const res = await strategyStore.fetchStrategies(searchForm)
     strategies.value = res.strategies
   } catch (error) {
-    ElMessage.error('获取策略列表失败')
+    ElMessage.error(t('strategy.fetchFailed'))
   } finally {
     loading.value = false
   }
@@ -615,20 +617,20 @@ const handleSelectionChange = (selection) => {
 const handleStart = async (row) => {
   try {
     await strategyStore.startStrategy(row.id)
-    ElMessage.success('策略启动成功')
+    ElMessage.success(t('strategy.startSuccess'))
     fetchData()
   } catch (error) {
-    ElMessage.error('策略启动失败')
+    ElMessage.error(t('strategy.startFailed'))
   }
 }
 
 const handleStop = async (row) => {
   try {
     await strategyStore.stopStrategy(row.id)
-    ElMessage.success('策略停止成功')
+    ElMessage.success(t('strategy.stopSuccess'))
     fetchData()
   } catch (error) {
-    ElMessage.error('策略停止失败')
+    ElMessage.error(t('strategy.stopFailed'))
   }
 }
 
@@ -638,28 +640,28 @@ const handleView = async (row) => {
     currentStrategy.value = detail
     showDetailDialog.value = true
   } catch (error) {
-    ElMessage.error('获取策略详情失败')
+    ElMessage.error(t('strategy.detailFailed'))
   }
 }
 
 const handleDelete = async (row) => {
   try {
     await ElMessageBox.confirm(
-      `确定要删除策略 "${row.name}" 吗？`,
-      '警告',
+      t('strategy.deleteConfirm', { name: row.name }),
+      t('strategy.warning'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning'
       }
     )
 
     await strategyStore.deleteStrategy(row.id)
-    ElMessage.success('策略删除成功')
+    ElMessage.success(t('strategy.deleteSuccess'))
     fetchData()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('策略删除失败')
+      ElMessage.error(t('strategy.deleteFailed'))
     }
   }
 }
@@ -685,13 +687,13 @@ const handleCreate = async () => {
   submitting.value = true
   try {
     await strategyStore.createStrategy(createForm)
-    ElMessage.success('策略创建成功')
+    ElMessage.success(t('strategy.createSuccess'))
     // 清除草稿
     clearDraft()
     showCreateDialog.value = false
     fetchData()
   } catch (error) {
-    ElMessage.error('策略创建失败')
+    ElMessage.error(t('strategy.createFailed'))
   } finally {
     submitting.value = false
   }
@@ -720,9 +722,9 @@ const calculateUptime = (startedAt) => {
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
 
   if (hours > 0) {
-    return `${hours}小时${minutes}分钟`
+    return `${hours}${t('strategy.hours')}${minutes}${t('strategy.minutes')}`
   } else {
-    return `${minutes}分钟`
+    return `${minutes}${t('strategy.minutes')}`
   }
 }
 
@@ -830,11 +832,11 @@ const loadDraft = (draftId) => {
         signal_thresholds: draftData.signal_thresholds
       })
       draftKey = draftId
-      ElMessage.success('草稿已加载')
+      ElMessage.success(t('strategy.draftLoaded'))
     }
   } catch (error) {
     console.error('Failed to load draft:', error)
-    ElMessage.error('加载草稿失败')
+    ElMessage.error(t('strategy.draftLoadFailed'))
   }
 }
 
@@ -862,16 +864,16 @@ const clearDraft = () => {
 const handleClearDraft = async () => {
   try {
     await ElMessageBox.confirm(
-      '确定要清除草稿吗？此操作不可撤销。',
-      '确认清除',
+      t('strategy.confirmClearDraft'),
+      t('strategy.confirmClear'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning'
       }
     )
     clearDraft()
-    ElMessage.success('草稿已清除')
+    ElMessage.success(t('strategy.draftCleared'))
   } catch (error) {
     // 用户取消
   }
