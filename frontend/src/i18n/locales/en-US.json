@@ -560,5 +560,108 @@
     "pageSize": "{size} per page",
     "goto": "Go to",
     "page": "page"
+  },
+  "drafts": {
+    "title": "Draft Management Center",
+    "batchDelete": "Batch Delete",
+    "clearExpired": "Clear Expired Drafts",
+    "settings": "Draft Settings",
+    "statistics": "Total: {total} drafts | {editing} editing | {expired} expired",
+    "table": {
+      "name": "Draft Name",
+      "status": "Status",
+      "lastModified": "Last Modified",
+      "configSummary": "Configuration Summary",
+      "expiryTime": "Expiry Time",
+      "actions": "Actions"
+    },
+    "status": {
+      "expired": "Expired ❌",
+      "editing": "Editing 📝",
+      "saved": "Saved 💾"
+    },
+    "actions": {
+      "continueEdit": "Continue Edit",
+      "publish": "Publish Strategy",
+      "copyAsNew": "Copy as New Strategy",
+      "delete": "Delete"
+    },
+    "settingsDialog": {
+      "title": "Draft Management Settings",
+      "autoSave": "Auto Save Drafts",
+      "autoSaveTip": "When enabled, automatically save drafts when creating strategies",
+      "saveInterval": "Save Interval (seconds)",
+      "saveIntervalTip": "Time interval for auto-saving",
+      "retentionDays": "Draft Retention Days",
+      "retentionDaysTip": "Drafts older than this will be marked as expired",
+      "expiryAction": "Expiry Action Strategy",
+      "expiryActionMark": "Mark but Keep",
+      "expiryActionDelete": "Auto Delete",
+      "versionFormat": "Version Naming Rule",
+      "versionFormatTip": "Fixed format: v0.{counter}-draft",
+      "versionFormatPlaceholder": "v0.{counter}-draft",
+      "publishVersionStrategy": "Version Upgrade on Publish",
+      "publishVersionAuto": "Auto upgrade to v1.0",
+      "publishVersionManual": "Manually specify version",
+      "cancel": "Cancel",
+      "save": "Save Settings",
+      "reset": "Restore Defaults"
+    },
+    "publishDialog": {
+      "title": "Publish Strategy",
+      "name": "Strategy Name",
+      "version": "Version",
+      "versionPlaceholder": "e.g., v1.0",
+      "versionAuto": "v1.0 (auto)",
+      "versionNote": "Version Note",
+      "versionNotePlaceholder": "Enter version note (optional)",
+      "cancel": "Cancel",
+      "confirm": "Confirm Publish"
+    },
+    "messages": {
+      "loadFailed": "Failed to load drafts",
+      "noExpired": "No expired drafts",
+      "publishSuccess": "Strategy published successfully",
+      "publishFailed": "Failed to publish strategy",
+      "copySuccess": "Copied as new strategy draft",
+      "copyFailed": "Failed to copy",
+      "deleteSuccess": "Draft deleted",
+      "deleteFailed": "Failed to delete",
+      "selectDrafts": "Please select drafts to delete first",
+      "batchDeleteSuccess": "Deleted {count} drafts",
+      "batchDeleteFailed": "Failed to batch delete",
+      "clearSuccess": "Cleared {count} expired drafts",
+      "clearFailed": "Failed to clear",
+      "settingsSaved": "Settings saved",
+      "settingsSaveFailed": "Failed to save settings",
+      "settingsReset": "Default settings restored"
+    },
+    "confirmations": {
+      "deleteTitle": "Confirm Delete",
+      "deleteMessage": "Delete draft \"{name}\"?",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "batchDeleteTitle": "Batch Delete",
+      "batchDeleteMessage": "Delete {count} selected drafts?",
+      "clearExpiredTitle": "Clear Expired Drafts",
+      "clearExpiredMessage": "Found {count} expired drafts, confirm to clear?"
+    },
+    "unnamed": "(Unnamed Strategy)",
+    "copy": "(Copy)",
+    "configSummary": {
+      "exchange": "Exchange",
+      "timeframe": "Timeframe",
+      "pairs": "Pairs",
+      "notSet": "Not Set"
+    },
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{n} minutes ago",
+      "hoursAgo": "{n} hours ago",
+      "daysAgo": "{n} days ago",
+      "expired": "Expired",
+      "expiresInHours": "Expires in {n} hours",
+      "expiresInDays": "Expires in {n} days"
+    }
   }
 }

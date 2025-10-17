@@ -560,5 +560,108 @@
     "pageSize": "每页 {size} 条",
     "goto": "跳转",
     "page": "页"
+  },
+  "drafts": {
+    "title": "草稿管理中心",
+    "batchDelete": "批量删除",
+    "clearExpired": "清理过期草稿",
+    "settings": "草稿设置",
+    "statistics": "总计: {total}个草稿 | {editing}个修改中 | {expired}个过期",
+    "table": {
+      "name": "草稿名称",
+      "status": "状态",
+      "lastModified": "最后修改",
+      "configSummary": "配置摘要",
+      "expiryTime": "过期时间",
+      "actions": "操作"
+    },
+    "status": {
+      "expired": "过期 ❌",
+      "editing": "修改中 📝",
+      "saved": "已保存 💾"
+    },
+    "actions": {
+      "continueEdit": "继续编辑",
+      "publish": "发布策略",
+      "copyAsNew": "复制为新策略",
+      "delete": "删除"
+    },
+    "settingsDialog": {
+      "title": "草稿管理设置",
+      "autoSave": "自动保存草稿",
+      "autoSaveTip": "启用后，创建策略时自动保存草稿",
+      "saveInterval": "保存间隔（秒）",
+      "saveIntervalTip": "自动保存的时间间隔",
+      "retentionDays": "草稿保留天数",
+      "retentionDaysTip": "草稿超过此天数将被标记为过期",
+      "expiryAction": "过期处理策略",
+      "expiryActionMark": "标记但保留",
+      "expiryActionDelete": "自动删除",
+      "versionFormat": "版本号命名规则",
+      "versionFormatTip": "固定格式：v0.{counter}-draft",
+      "versionFormatPlaceholder": "v0.{counter}-draft",
+      "publishVersionStrategy": "发布时版本升级",
+      "publishVersionAuto": "自动升级到 v1.0",
+      "publishVersionManual": "手动指定版本号",
+      "cancel": "取消",
+      "save": "保存设置",
+      "reset": "恢复默认"
+    },
+    "publishDialog": {
+      "title": "发布策略",
+      "name": "策略名称",
+      "version": "版本号",
+      "versionPlaceholder": "例如: v1.0",
+      "versionAuto": "v1.0 (自动)",
+      "versionNote": "版本说明",
+      "versionNotePlaceholder": "请输入版本说明（可选）",
+      "cancel": "取消",
+      "confirm": "确认发布"
+    },
+    "messages": {
+      "loadFailed": "加载草稿失败",
+      "noExpired": "没有过期的草稿",
+      "publishSuccess": "策略发布成功",
+      "publishFailed": "策略发布失败",
+      "copySuccess": "已复制为新策略草稿",
+      "copyFailed": "复制失败",
+      "deleteSuccess": "草稿已删除",
+      "deleteFailed": "删除失败",
+      "selectDrafts": "请先选择要删除的草稿",
+      "batchDeleteSuccess": "已删除 {count} 个草稿",
+      "batchDeleteFailed": "批量删除失败",
+      "clearSuccess": "已清理 {count} 个过期草稿",
+      "clearFailed": "清理失败",
+      "settingsSaved": "设置已保存",
+      "settingsSaveFailed": "保存设置失败",
+      "settingsReset": "已恢复默认设置"
+    },
+    "confirmations": {
+      "deleteTitle": "确认删除",
+      "deleteMessage": "确定要删除草稿 \"{name}\" 吗？",
+      "confirm": "确定",
+      "cancel": "取消",
+      "batchDeleteTitle": "批量删除",
+      "batchDeleteMessage": "确定要删除选中的 {count} 个草稿吗？",
+      "clearExpiredTitle": "清理过期草稿",
+      "clearExpiredMessage": "发现 {count} 个过期草稿，确定要清理吗？"
+    },
+    "unnamed": "(未命名策略)",
+    "copy": "(副本)",
+    "configSummary": {
+      "exchange": "交易所",
+      "timeframe": "周期",
+      "pairs": "交易对",
+      "notSet": "未设置"
+    },
+    "time": {
+      "justNow": "刚刚",
+      "minutesAgo": "{n}分钟前",
+      "hoursAgo": "{n}小时前",
+      "daysAgo": "{n}天前",
+      "expired": "已过期",
+      "expiresInHours": "{n}小时后过期",
+      "expiresInDays": "{n}天后过期"
+    }
   }
 }
