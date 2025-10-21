@@ -86,6 +86,7 @@
           :option="candlestickOption"
           :init-options="{ renderer: 'canvas' }"
           :update-options="{ notMerge: true, lazyUpdate: false }"
+          @datazoom="handleDataZoom"
           style="height: 100%"
           autoresize
         />
@@ -211,6 +212,12 @@ const availablePairs = ref([
 
 // 时间周期
 const currentTimeframe = ref('1h')
+
+// 缩放状态记忆 - 保存用户的缩放位置
+const zoomState = ref({
+  start: 70,
+  end: 100
+})
 
 // 技术指标
 const activeIndicators = ref(['MA', 'VOL'])
@@ -392,7 +399,7 @@ const candlestickOption = computed(() => {
     })
   }
 
-  // 构建dataZoom配置 - 使用固定初始值，让ECharts自己管理状态
+  // 构建dataZoom配置 - 使用保存的缩放状态
   // 根据实际xAxis数量动态生成xAxisIndex数组
   const xAxisCount = xAxisConfig.length  // 使用实际的xAxis数组长度
   const xAxisIndices = Array.from({ length: xAxisCount }, (_, i) => i)
@@ -402,8 +409,8 @@ const candlestickOption = computed(() => {
       id: 'dataZoomX',
       type: 'inside',
       xAxisIndex: xAxisIndices,
-      start: 70,
-      end: 100,
+      start: zoomState.value.start,
+      end: zoomState.value.end,
       zoomOnMouseWheel: true,
       moveOnMouseMove: true,
       minSpan: 5,  // 最小跨度5%
@@ -415,8 +422,8 @@ const candlestickOption = computed(() => {
       xAxisIndex: xAxisIndices,
       type: 'slider',
       top: hasSubplot ? '88%' : '85%',
-      start: 70,
-      end: 100,
+      start: zoomState.value.start,
+      end: zoomState.value.end,
       height: 20,
       borderColor: 'transparent',
       fillerColor: 'rgba(64, 158, 255, 0.2)',
@@ -815,6 +822,21 @@ const generateVolumeData = () => {
 }
 
 // 方法
+
+// 处理图表缩放事件 - 保存用户的缩放状态
+const handleDataZoom = (event) => {
+  if (event && event.batch && event.batch.length > 0) {
+    const batch = event.batch[0]
+    if (batch.start !== undefined && batch.end !== undefined) {
+      zoomState.value = {
+        start: batch.start,
+        end: batch.end
+      }
+      console.log('📊 缩放状态已保存:', zoomState.value)
+    }
+  }
+}
+
 const selectPair = async (symbol) => {
   selectedPair.value = symbol
   // 切换货币对时保持缩放比例和位置
