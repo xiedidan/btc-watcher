@@ -33,6 +33,7 @@ websockets==12.0
 
 # Task Queue & Background Jobs
 celery==5.3.4
+apscheduler==3.10.4
 
 # Monitoring & Logging
 psutil==5.9.6
@@ -45,6 +46,12 @@ pytz==2023.3
 # Data Processing
 pandas==2.1.4
 numpy==1.26.2
+
+# Cryptocurrency Exchange Integration
+ccxt==4.2.25
+
+# Technical Analysis
+ta==0.11.0
 
 # FreqTrade (will be installed in separate container)
 # freqtrade==2025.8

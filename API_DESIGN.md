@@ -423,7 +423,283 @@ Token刷新接口
 
 ---
 
-### 2.8 图表数据接口
+### 2.8 市场数据接口
+
+#### GET /api/v1/market/klines
+获取K线数据（OHLCV）
+
+**查询参数**:
+| 参数 | 类型 | 必填 | 说明 | 示例 |
+|------|------|------|------|------|
+| exchange | string | 否 | 交易所名称，默认使用系统配置 | binance |
+| symbol | string | 是 | 交易对符号 | BTC/USDT |
+| timeframe | string | 是 | 时间周期 | 1h |
+| limit | integer | 否 | 返回数据条数，默认200 | 200 |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "exchange": "binance",
+    "symbol": "BTC/USDT",
+    "timeframe": "1h",
+    "data": [
+      {
+        "open_time": "2024-01-15T14:00:00Z",
+        "close_time": "2024-01-15T14:59:59Z",
+        "open": 45230.5,
+        "high": 45450.2,
+        "low": 45100.3,
+        "close": 45320.8,
+        "volume": 1234.56,
+        "quote_volume": 55432.12,
+        "trade_count": 15234
+      }
+    ],
+    "data_source": "cache",
+    "is_stale": false,
+    "last_update": "2024-01-15T15:00:00Z"
+  }
+}
+```
+
+**data_source字段说明**:
+- `cache`: 数据来自Redis缓存
+- `database`: 数据来自PostgreSQL数据库
+- `api`: 数据来自交易所API
+
+**is_stale字段说明**:
+- `true`: 数据可能过期（在API限流降级时）
+- `false`: 数据为最新
+
+---
+
+#### GET /api/v1/market/indicators
+获取技术指标数据
+
+**查询参数**:
+| 参数 | 类型 | 必填 | 说明 | 示例 |
+|------|------|------|------|------|
+| exchange | string | 否 | 交易所名称 | binance |
+| symbol | string | 是 | 交易对符号 | BTC/USDT |
+| timeframe | string | 是 | 时间周期 | 1h |
+| indicators | string | 是 | 指标类型（逗号分隔） | MA,MACD,RSI |
+
+**支持的指标类型**:
+- `MA`: 移动平均线（MA5, MA10, MA20, MA30）
+- `MACD`: MACD指标（MACD线、信号线、柱状图）
+- `RSI`: 相对强弱指数
+- `BOLL`: 布林带（上轨、中轨、下轨）
+- `VOL`: 成交量（成交量、成交量MA）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "exchange": "binance",
+    "symbol": "BTC/USDT",
+    "timeframe": "1h",
+    "indicators": {
+      "MA": {
+        "ma5": [45230.5, 45240.2, 45250.8, ...],
+        "ma10": [45100.2, 45110.5, 45120.3, ...],
+        "ma20": [44980.7, 44990.3, 45000.1, ...],
+        "ma30": [44850.3, 44860.1, 44870.5, ...]
+      },
+      "MACD": {
+        "macd": [120.5, 125.3, 130.1, ...],
+        "macd_signal": [115.3, 120.1, 125.5, ...],
+        "macd_histogram": [5.2, 5.2, 4.6, ...]
+      },
+      "RSI": {
+        "rsi": [68.5, 69.2, 70.1, ...]
+      },
+      "BOLL": {
+        "upper": [45800.0, 45850.0, 45900.0, ...],
+        "middle": [45230.5, 45240.2, 45250.8, ...],
+        "lower": [44660.0, 44630.0, 44600.0, ...]
+      },
+      "VOL": {
+        "volume": [1234.56, 1456.78, 1678.90, ...],
+        "volume_ma": [1500.0, 1510.5, 1520.3, ...]
+      }
+    },
+    "data_source": "cache",
+    "calculated_at": "2024-01-15T15:00:00Z"
+  }
+}
+```
+
+---
+
+#### GET /api/v1/market/ticker
+获取实时行情数据
+
+**查询参数**:
+| 参数 | 类型 | 必填 | 说明 | 示例 |
+|------|------|------|------|------|
+| exchange | string | 否 | 交易所名称 | binance |
+| symbol | string | 是 | 交易对符号 | BTC/USDT |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "exchange": "binance",
+    "symbol": "BTC/USDT",
+    "last": 45320.8,
+    "bid": 45320.5,
+    "ask": 45321.0,
+    "volume_24h": 12345.67,
+    "change_24h": 2.34,
+    "change_percent_24h": 0.052,
+    "high_24h": 45800.0,
+    "low_24h": 44200.0,
+    "timestamp": "2024-01-15T15:00:00Z"
+  }
+}
+```
+
+---
+
+#### GET /api/v1/system/config
+获取系统配置
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "market_data": {
+      "default_exchange": "binance",
+      "enabled_exchanges": ["binance", "okx", "bybit", "bitget"],
+      "default_klines_limit": 200,
+      "cache_config": {
+        "ttl": {
+          "1m": 60,
+          "5m": 300,
+          "15m": 900,
+          "1h": 3600,
+          "4h": 14400,
+          "1d": 86400
+        },
+        "max_size_mb": 512
+      },
+      "update_mode": "interval",
+      "update_interval_seconds": 5,
+      "n_periods": 1,
+      "auto_failover": true,
+      "rate_limit_fallback": true,
+      "historical_data_days": {
+        "1m": 7,
+        "5m": 30,
+        "15m": 30,
+        "1h": 90,
+        "4h": 365,
+        "1d": 365
+      }
+    },
+    "current_exchange": "binance",
+    "exchange_health": {
+      "binance": "healthy",
+      "okx": "healthy",
+      "bybit": "healthy",
+      "bitget": "unhealthy"
+    },
+    "last_updated": "2024-01-15T15:00:00Z"
+  }
+}
+```
+
+---
+
+#### PUT /api/v1/system/config
+更新系统配置
+
+**请求体**:
+```json
+{
+  "market_data": {
+    "default_exchange": "okx",
+    "update_mode": "n_periods",
+    "n_periods": 1,
+    "cache_config": {
+      "max_size_mb": 1024
+    }
+  }
+}
+```
+
+**注意事项**:
+- 请求体支持部分更新（深度合并）
+- 配置更新后会自动验证合法性
+- 部分配置（如update_mode）更新后需要重启调度器
+
+**响应**: 同GET /api/v1/system/config
+
+---
+
+#### GET /api/v1/health/market-data
+市场数据模块健康检查
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "timestamp": "2024-01-15T15:00:00Z",
+    "components": {
+      "redis": {
+        "status": "healthy",
+        "memory_usage_mb": 256.5,
+        "memory_max_mb": 512.0
+      },
+      "database": {
+        "status": "healthy",
+        "connection_pool": "5/20"
+      },
+      "exchange_binance": {
+        "status": "healthy",
+        "last_check": "2024-01-15T15:00:00Z",
+        "latency_ms": 120
+      },
+      "exchange_okx": {
+        "status": "healthy",
+        "last_check": "2024-01-15T15:00:00Z",
+        "latency_ms": 145
+      },
+      "exchange_bybit": {
+        "status": "healthy",
+        "last_check": "2024-01-15T15:00:00Z",
+        "latency_ms": 132
+      },
+      "exchange_bitget": {
+        "status": "unhealthy",
+        "last_check": "2024-01-15T14:58:00Z",
+        "error": "Connection timeout"
+      }
+    },
+    "metrics": {
+      "api_requests_total": 15234,
+      "cache_hit_rate": 0.85,
+      "avg_response_time_ms": 45
+    }
+  }
+}
+```
+
+**status字段说明**:
+- `healthy`: 所有组件正常
+- `degraded`: 部分组件异常但服务可用
+- `unhealthy`: 核心组件异常，服务不可用
+
+---
+
+### 2.9 图表数据接口（已废弃，请使用市场数据接口）
 
 #### GET /api/v1/charts/kline
 获取K线数据
@@ -457,17 +733,19 @@ Token刷新接口
 ```
 
 #### GET /api/v1/charts/indicators
-获取技术指标数据
+获取技术指标数据（已废弃，请使用 GET /api/v1/market/indicators）
 
 #### GET /api/v1/charts/signals
 获取图表信号标注
 
+**注意**: 本节的K线和技术指标接口已废弃，建议使用2.8节的市场数据接口获取数据。
+
 ---
 
-### 2.9 系统监控接口
+### 2.10 系统监控接口
 
 #### GET /api/v1/system/health
-系统健康检查
+系统整体健康检查
 
 **响应**:
 ```json

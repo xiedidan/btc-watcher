@@ -6,5 +6,21 @@ from .signal import Signal
 from .notification import NotificationChannelConfig, NotificationFrequencyLimit, NotificationTimeRule, NotificationHistory
 from .proxy import Proxy
 from .user_settings import UserSettings
+from .system_config import SystemConfig
+from .technical_indicator import TechnicalIndicator
+from .kline import Kline
 
-__all__ = ["User", "Strategy", "Signal", "NotificationChannelConfig", "NotificationFrequencyLimit", "NotificationTimeRule", "NotificationHistory", "Proxy", "UserSettings"]
+__all__ = [
+    "User",
+    "Strategy",
+    "Signal",
+    "NotificationChannelConfig",
+    "NotificationFrequencyLimit",
+    "NotificationTimeRule",
+    "NotificationHistory",
+    "Proxy",
+    "UserSettings",
+    "SystemConfig",
+    "TechnicalIndicator",
+    "Kline"
+]

@@ -1,4 +1,5 @@
 import request from './request'
+import { marketDataAPI, systemConfigAPI, healthCheckAPI } from './marketData'
 
 // 认证API
 export const authAPI = {
@@ -246,3 +247,6 @@ export const settingsAPI = {
     return request.post('/settings/reset')
   }
 }
+
+// Export market data related APIs
+export { marketDataAPI, systemConfigAPI, healthCheckAPI }

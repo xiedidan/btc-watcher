@@ -7,12 +7,14 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import ECharts from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart, PieChart } from 'echarts/charts'
+import { LineChart, PieChart, CandlestickChart, BarChart } from 'echarts/charts'
 import {
   TitleComponent,
   TooltipComponent,
   LegendComponent,
-  GridComponent
+  GridComponent,
+  DataZoomComponent,
+  MarkPointComponent
 } from 'echarts/components'
 import i18n from './i18n'
 import zhCnElementLocale from 'element-plus/dist/locale/zh-cn.mjs'
@@ -26,10 +28,14 @@ use([
   CanvasRenderer,
   LineChart,
   PieChart,
+  CandlestickChart,
+  BarChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
-  GridComponent
+  GridComponent,
+  DataZoomComponent,
+  MarkPointComponent
 ])
 
 const app = createApp(App)

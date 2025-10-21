@@ -1661,7 +1661,761 @@ FreqTrade: v2025.8 ● | [有更新可用 🆙] | 最后检查: 2小时前
 
 ---
 
-## 12. 待明确的技术细节
+## 12. 市场数据服务详细设计
+
+### 12.1 数据服务架构
+
+**三层数据访问架构**:
+```
+┌──────────────┐
+│  Charts.vue  │  前端图表组件
+│  (前端)      │
+└──────┬───────┘
+       │ HTTP API调用
+       ▼
+┌──────────────────────────────────────────────────┐
+│            Market Data API Layer                │
+│  /api/v1/market/klines                         │
+│  /api/v1/market/ticker                          │
+│  /api/v1/system/config                          │
+└──────┬──────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────┐
+│          Market Data Service (业务层)          │
+│  - CCXT客户端封装                               │
+│  - 限流处理与降级                                │
+│  - 数据更新调度器                                │
+└──────┬──────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────┐
+│        Data Access Layer (数据层)              │
+│  Layer 1: Redis Cache (优先级最高)             │
+│  Layer 2: PostgreSQL (次优先级)                │
+│  Layer 3: CCXT API (最终降级)                  │
+└──────────────────────────────────────────────────┘
+```
+
+### 12.2 CCXT集成设计
+
+**CCXT客户端管理器**:
+```python
+class CCXTManager:
+    """CCXT客户端管理器"""
+
+    def __init__(self, config_service):
+        self.config_service = config_service
+        self.clients = {}  # {exchange_name: ccxt_client}
+        self.proxy_manager = ProxyManager()
+
+    async def get_client(self, exchange: str) -> ccxt.Exchange:
+        """获取或创建CCXT客户端实例"""
+        if exchange not in self.clients:
+            self.clients[exchange] = await self._create_client(exchange)
+        return self.clients[exchange]
+
+    async def _create_client(self, exchange: str) -> ccxt.Exchange:
+        """创建CCXT客户端"""
+        # 从系统配置获取默认交易所
+        config = await self.config_service.get_market_data_config()
+
+        # 选择健康的代理
+        proxy = await self.proxy_manager.get_healthy_proxy()
+
+        # 创建客户端
+        ExchangeClass = getattr(ccxt, exchange)
+        client = ExchangeClass({
+            'enableRateLimit': True,
+            'proxies': {
+                'http': proxy.url if proxy else None,
+                'https': proxy.url if proxy else None
+            },
+            'timeout': 30000
+        })
+
+        return client
+
+    async def fetch_ohlcv(
+        self,
+        exchange: str,
+        symbol: str,
+        timeframe: str,
+        limit: int = 200
+    ) -> List[List]:
+        """获取K线数据（带限流处理）"""
+        try:
+            client = await self.get_client(exchange)
+            data = await client.fetch_ohlcv(symbol, timeframe, limit=limit)
+            return data
+
+        except ccxt.RateLimitExceeded as e:
+            logger.warning(f"Rate limit exceeded for {exchange}, falling back to cache")
+            # 触发降级到缓存/数据库
+            return await self._fetch_from_cache_or_db(exchange, symbol, timeframe, limit)
+
+        except ccxt.NetworkError as e:
+            logger.error(f"Network error for {exchange}: {e}")
+            # 尝试切换代理
+            await self.proxy_manager.mark_proxy_failed()
+            raise
+
+    async def _fetch_from_cache_or_db(
+        self,
+        exchange: str,
+        symbol: str,
+        timeframe: str,
+        limit: int
+    ) -> List[List]:
+        """降级到缓存/数据库"""
+        # 优先尝试Redis缓存
+        cached = await self.cache_service.get_klines(
+            exchange, symbol, timeframe, limit
+        )
+        if cached:
+            return cached
+
+        # 降级到数据库历史数据
+        db_data = await self.db_service.get_klines(
+            exchange, symbol, timeframe, limit
+        )
+        return db_data
+```
+
+**交易所故障切换**:
+```python
+class ExchangeFailoverManager:
+    """交易所自动故障切换管理器"""
+
+    def __init__(self, config_service):
+        self.config_service = config_service
+        self.current_exchange = None
+        self.exchange_health = {}  # {exchange_name: health_status}
+
+    async def get_active_exchange(self) -> str:
+        """获取当前活跃的交易所"""
+        config = await self.config_service.get_market_data_config()
+
+        # 检查是否启用自动切换
+        if not config['auto_failover']:
+            return config['default_exchange']
+
+        # 如果当前交易所健康，继续使用
+        if self.current_exchange and self._is_healthy(self.current_exchange):
+            return self.current_exchange
+
+        # 查找健康的交易所
+        for exchange in config['enabled_exchanges']:
+            if self._is_healthy(exchange):
+                if self.current_exchange != exchange:
+                    logger.info(f"Switching to healthy exchange: {exchange}")
+                    self.current_exchange = exchange
+                return exchange
+
+        # 所有交易所都不可用，返回默认
+        logger.warning("All exchanges unhealthy, using default")
+        return config['default_exchange']
+
+    def _is_healthy(self, exchange: str) -> bool:
+        """检查交易所健康状态"""
+        health = self.exchange_health.get(exchange, {})
+        return health.get('status') == 'healthy'
+
+    async def mark_exchange_failed(self, exchange: str):
+        """标记交易所故障"""
+        self.exchange_health[exchange] = {
+            'status': 'unhealthy',
+            'last_failure': datetime.utcnow(),
+            'failure_count': self.exchange_health.get(exchange, {}).get('failure_count', 0) + 1
+        }
+
+        # 触发切换
+        await self.get_active_exchange()
+```
+
+### 12.3 技术指标计算服务
+
+> **注意**: 技术指标功能暂不实现，留待第二期迭代。当前图表仅显示K线、成交量和信号标记。
+
+**指标计算引擎**（第二期实现）:
+```python
+import pandas as pd
+import ta  # technical analysis library
+
+class IndicatorCalculator:
+    """技术指标计算引擎"""
+
+    async def calculate_indicators(
+        self,
+        klines: List[List],
+        indicator_types: List[str]
+    ) -> Dict[str, Any]:
+        """计算多个技术指标"""
+        # 转换为DataFrame
+        df = pd.DataFrame(klines, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+
+        results = {}
+
+        for indicator_type in indicator_types:
+            if indicator_type == 'MA':
+                results['MA'] = self._calculate_ma(df)
+            elif indicator_type == 'MACD':
+                results['MACD'] = self._calculate_macd(df)
+            elif indicator_type == 'RSI':
+                results['RSI'] = self._calculate_rsi(df)
+            elif indicator_type == 'BOLL':
+                results['BOLL'] = self._calculate_bollinger(df)
+            elif indicator_type == 'VOL':
+                results['VOL'] = self._calculate_volume(df)
+
+        return results
+
+    def _calculate_ma(self, df: pd.DataFrame) -> Dict[str, List]:
+        """计算移动平均线"""
+        return {
+            'ma5': df['close'].rolling(window=5).mean().tolist(),
+            'ma10': df['close'].rolling(window=10).mean().tolist(),
+            'ma20': df['close'].rolling(window=20).mean().tolist(),
+            'ma30': df['close'].rolling(window=30).mean().tolist()
+        }
+
+    def _calculate_macd(self, df: pd.DataFrame) -> Dict[str, List]:
+        """计算MACD"""
+        macd = ta.trend.MACD(df['close'])
+        return {
+            'macd': macd.macd().tolist(),
+            'signal': macd.macd_signal().tolist(),
+            'histogram': macd.macd_diff().tolist()
+        }
+
+    def _calculate_rsi(self, df: pd.DataFrame) -> Dict[str, List]:
+        """计算RSI"""
+        rsi = ta.momentum.RSIIndicator(df['close'], window=14)
+        return {
+            'rsi': rsi.rsi().tolist()
+        }
+
+    def _calculate_bollinger(self, df: pd.DataFrame) -> Dict[str, List]:
+        """计算布林带"""
+        bollinger = ta.volatility.BollingerBands(df['close'])
+        return {
+            'upper': bollinger.bollinger_hband().tolist(),
+            'middle': bollinger.bollinger_mavg().tolist(),
+            'lower': bollinger.bollinger_lband().tolist()
+        }
+
+    def _calculate_volume(self, df: pd.DataFrame) -> Dict[str, List]:
+        """计算成交量指标"""
+        return {
+            'volume': df['volume'].tolist(),
+            'volume_ma': df['volume'].rolling(window=20).mean().tolist()
+        }
+```
+
+### 12.4 系统配置服务设计
+
+**SystemConfig服务**:
+```python
+class SystemConfigService:
+    """系统配置服务"""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def get_market_data_config(self) -> Dict:
+        """获取市场数据配置"""
+        config = await self.db.query(SystemConfig).filter(
+            SystemConfig.id == 1
+        ).first()
+
+        if not config:
+            # 首次运行，创建默认配置
+            config = await self._create_default_config()
+
+        return config.market_data
+
+    async def update_market_data_config(self, config_update: Dict) -> SystemConfig:
+        """更新市场数据配置"""
+        config = await self.db.query(SystemConfig).filter(
+            SystemConfig.id == 1
+        ).first()
+
+        # 深度合并配置
+        current_config = config.market_data
+        updated_config = self._deep_merge(current_config, config_update)
+
+        config.market_data = updated_config
+        await self.db.commit()
+
+        return config
+
+    def _deep_merge(self, base: Dict, update: Dict) -> Dict:
+        """深度合并两个字典"""
+        result = base.copy()
+        for key, value in update.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = self._deep_merge(result[key], value)
+            else:
+                result[key] = value
+        return result
+
+    async def _create_default_config(self) -> SystemConfig:
+        """创建默认系统配置"""
+        default_config = SystemConfig(
+            id=1,
+            market_data={
+                "default_exchange": "binance",
+                "enabled_exchanges": ["binance", "okx", "bybit", "bitget"],
+                "default_klines_limit": 200,
+                "cache_config": {
+                    "ttl": {
+                        "1m": 60,
+                        "5m": 300,
+                        "15m": 900,
+                        "1h": 3600,
+                        "4h": 14400,
+                        "1d": 86400
+                    },
+                    "max_size_mb": 512
+                },
+                "update_mode": "interval",
+                "update_interval_seconds": 5,
+                "n_periods": 1,
+                "auto_failover": True,
+                "rate_limit_fallback": True,
+                "historical_data_days": {
+                    "1m": 7,
+                    "5m": 30,
+                    "15m": 30,
+                    "1h": 90,
+                    "4h": 365,
+                    "1d": 365
+                }
+            }
+        )
+
+        self.db.add(default_config)
+        await self.db.commit()
+        return default_config
+```
+
+### 12.5 数据更新调度器
+
+**固定间隔模式调度器**:
+```python
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+class MarketDataScheduler:
+    """市场数据更新调度器"""
+
+    def __init__(
+        self,
+        config_service: SystemConfigService,
+        market_data_service: MarketDataService
+    ):
+        self.config_service = config_service
+        self.market_data_service = market_data_service
+        self.scheduler = AsyncIOScheduler()
+
+    async def start(self):
+        """启动调度器"""
+        config = await self.config_service.get_market_data_config()
+
+        if config['update_mode'] == 'interval':
+            await self._start_interval_mode(config)
+        elif config['update_mode'] == 'n_periods':
+            await self._start_n_periods_mode(config)
+
+        self.scheduler.start()
+        logger.info("Market data scheduler started")
+
+    async def _start_interval_mode(self, config: Dict):
+        """启动固定间隔模式"""
+        interval = config['update_interval_seconds']
+
+        self.scheduler.add_job(
+            self._update_all_timeframes,
+            'interval',
+            seconds=interval,
+            id='market_data_interval_update'
+        )
+
+    async def _start_n_periods_mode(self, config: Dict):
+        """启动N周期模式"""
+        # 为每个时间周期设置独立的更新间隔
+        timeframe_intervals = {
+            '1m': 60,      # 每60秒更新
+            '5m': 300,     # 每5分钟更新
+            '15m': 900,    # 每15分钟更新
+            '1h': 3600,    # 每1小时更新
+            '4h': 14400,   # 每4小时更新
+            '1d': 14400    # 每4小时更新（1d的N倍周期）
+        }
+
+        for timeframe, interval in timeframe_intervals.items():
+            self.scheduler.add_job(
+                self._update_timeframe,
+                'interval',
+                seconds=interval,
+                args=[timeframe],
+                id=f'market_data_{timeframe}_update'
+            )
+
+    async def _update_all_timeframes(self):
+        """更新所有时间周期的数据"""
+        config = await self.config_service.get_market_data_config()
+        exchange = await self.exchange_failover.get_active_exchange()
+
+        timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+        symbols = await self._get_active_symbols(exchange)
+
+        for symbol in symbols:
+            for timeframe in timeframes:
+                try:
+                    await self.market_data_service.update_klines(
+                        exchange, symbol, timeframe
+                    )
+                    await self.market_data_service.update_indicators(
+                        exchange, symbol, timeframe
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to update {symbol} {timeframe}: {e}")
+
+    async def _update_timeframe(self, timeframe: str):
+        """更新指定时间周期的数据"""
+        config = await self.config_service.get_market_data_config()
+        exchange = await self.exchange_failover.get_active_exchange()
+        symbols = await self._get_active_symbols(exchange)
+
+        for symbol in symbols:
+            try:
+                await self.market_data_service.update_klines(
+                    exchange, symbol, timeframe
+                )
+                await self.market_data_service.update_indicators(
+                    exchange, symbol, timeframe
+                )
+            except Exception as e:
+                logger.error(f"Failed to update {symbol} {timeframe}: {e}")
+```
+
+### 12.6 限流处理与降级策略
+
+**限流检测与降级**:
+```python
+class RateLimitHandler:
+    """限流处理器"""
+
+    def __init__(self, cache_service, db_service):
+        self.cache_service = cache_service
+        self.db_service = db_service
+        self.fallback_active = False
+        self.rate_limit_until = None
+
+    async def fetch_with_fallback(
+        self,
+        fetch_func: Callable,
+        cache_key: str,
+        exchange: str,
+        symbol: str,
+        timeframe: str,
+        limit: int
+    ):
+        """带降级的数据获取"""
+        try:
+            # 检查是否仍在限流期
+            if self._is_rate_limited():
+                logger.warning("Still in rate limit period, using fallback")
+                return await self._fallback_fetch(exchange, symbol, timeframe, limit)
+
+            # 尝试API请求
+            data = await fetch_func()
+
+            # 成功后清除限流标记
+            self.fallback_active = False
+            self.rate_limit_until = None
+
+            return data
+
+        except ccxt.RateLimitExceeded as e:
+            logger.warning(f"Rate limit exceeded: {e}")
+            self._mark_rate_limited()
+            return await self._fallback_fetch(exchange, symbol, timeframe, limit)
+
+    def _is_rate_limited(self) -> bool:
+        """检查是否仍在限流期"""
+        if not self.rate_limit_until:
+            return False
+        return datetime.utcnow() < self.rate_limit_until
+
+    def _mark_rate_limited(self):
+        """标记进入限流期（1小时）"""
+        self.fallback_active = True
+        self.rate_limit_until = datetime.utcnow() + timedelta(hours=1)
+
+    async def _fallback_fetch(
+        self,
+        exchange: str,
+        symbol: str,
+        timeframe: str,
+        limit: int
+    ):
+        """降级数据获取流程"""
+        # Step 1: 尝试Redis缓存
+        cached = await self.cache_service.get_klines(
+            exchange, symbol, timeframe, limit
+        )
+        if cached:
+            logger.info("Fetched from Redis cache (fallback)")
+            return cached
+
+        # Step 2: 降级到数据库
+        db_data = await self.db_service.get_klines(
+            exchange, symbol, timeframe, limit
+        )
+        if db_data:
+            logger.info("Fetched from database (fallback)")
+            return db_data
+
+        # Step 3: 无可用数据
+        logger.error("No fallback data available")
+        raise DataNotAvailableError(
+            f"Cannot fetch data for {exchange}:{symbol}:{timeframe}, "
+            "API rate limited and no cache/database data available"
+        )
+```
+
+### 12.7 前端Charts组件集成
+
+**Charts.vue更新（替换mock数据）**:
+```vue
+<script setup>
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { marketDataAPI } from '@/api'
+
+const { t } = useI18n()
+
+// ... 其他现有代码 ...
+
+// 替换generateMockData()函数
+const fetchRealKlines = async () => {
+  try {
+    loading.value = true
+
+    // 获取K线数据
+    const klinesRes = await marketDataAPI.getKlines({
+      symbol: selectedPair.value,
+      timeframe: currentTimeframe.value,
+      limit: 200
+    })
+
+    // 获取技术指标
+    const indicatorsRes = await marketDataAPI.getIndicators({
+      symbol: selectedPair.value,
+      timeframe: currentTimeframe.value,
+      indicators: activeIndicators.value
+    })
+
+    // 转换数据格式
+    const dates = klinesRes.data.map(k => formatTime(k.open_time))
+    const values = klinesRes.data.map(k => [k.open, k.close, k.low, k.high])
+
+    candlestickData.value = { dates, values }
+    indicatorData.value = indicatorsRes.data
+
+    // 获取系统配置（显示当前交易所）
+    const configRes = await marketDataAPI.getSystemConfig()
+    currentExchange.value = configRes.data.current_exchange
+
+    console.log('📊 K线数据已加载:', {
+      货币对: selectedPair.value,
+      时间周期: currentTimeframe.value,
+      数据点数: values.length,
+      交易所: currentExchange.value,
+      数据来源: klinesRes.data.data_source  // 'api' | 'cache' | 'database'
+    })
+
+  } catch (error) {
+    console.error('Failed to fetch klines:', error)
+    ElMessage.error(t('charts.fetchDataFailed'))
+  } finally {
+    loading.value = false
+  }
+}
+
+// 替换onMounted
+onMounted(() => {
+  fetchRealKlines()
+  fetchStrategies()
+  fetchSignals()
+
+  // 根据配置的更新模式设置定时刷新
+  refreshTimer = setInterval(() => {
+    fetchRealKlines()
+    fetchSignals()
+  }, 10000)  // 可以从系统配置读取
+})
+
+// ... 其他现有代码 ...
+</script>
+```
+
+**Market Data API客户端**:
+```javascript
+// frontend/src/api/marketData.js
+import request from './request'
+
+export const marketDataAPI = {
+  // 获取K线数据
+  getKlines(params) {
+    return request({
+      url: '/market/klines',
+      method: 'get',
+      params: {
+        exchange: params.exchange,
+        symbol: params.symbol,
+        timeframe: params.timeframe,
+        limit: params.limit || 200
+      }
+    })
+  },
+
+  // 获取技术指标
+  getIndicators(params) {
+    return request({
+      url: '/market/indicators',
+      method: 'get',
+      params: {
+        exchange: params.exchange,
+        symbol: params.symbol,
+        timeframe: params.timeframe,
+        indicators: params.indicators.join(',')
+      }
+    })
+  },
+
+  // 获取实时Ticker
+  getTicker(params) {
+    return request({
+      url: '/market/ticker',
+      method: 'get',
+      params: {
+        exchange: params.exchange,
+        symbol: params.symbol
+      }
+    })
+  },
+
+  // 获取系统配置
+  getSystemConfig() {
+    return request({
+      url: '/system/config',
+      method: 'get'
+    })
+  },
+
+  // 更新系统配置
+  updateSystemConfig(data) {
+    return request({
+      url: '/system/config',
+      method: 'put',
+      data
+    })
+  }
+}
+```
+
+### 12.8 Settings页面Market Data标签
+
+**Settings.vue扩展**:
+```vue
+<el-tab-pane :label="t('settings.marketData')" name="marketData">
+  <el-form label-width="200px">
+    <!-- 数据源配置 -->
+    <el-divider>{{ t('settings.dataSource') }}</el-divider>
+
+    <el-form-item :label="t('settings.defaultExchange')">
+      <el-select v-model="marketDataConfig.default_exchange">
+        <el-option label="Binance" value="binance" />
+        <el-option label="OKX" value="okx" />
+        <el-option label="Bybit" value="bybit" />
+        <el-option label="Bitget" value="bitget" />
+      </el-select>
+    </el-form-item>
+
+    <el-form-item :label="t('settings.enabledExchanges')">
+      <el-checkbox-group v-model="marketDataConfig.enabled_exchanges">
+        <el-checkbox label="binance">Binance</el-checkbox>
+        <el-checkbox label="okx">OKX</el-checkbox>
+        <el-checkbox label="bybit">Bybit</el-checkbox>
+        <el-checkbox label="bitget">Bitget</el-checkbox>
+      </el-checkbox-group>
+    </el-form-item>
+
+    <el-form-item :label="t('settings.autoFailover')">
+      <el-switch v-model="marketDataConfig.auto_failover" />
+      <span class="hint">{{ t('settings.autoFailoverTip') }}</span>
+    </el-form-item>
+
+    <!-- 缓存配置 -->
+    <el-divider>{{ t('settings.cacheConfig') }}</el-divider>
+
+    <el-form-item :label="t('settings.cacheMaxSize')">
+      <el-input-number
+        v-model="marketDataConfig.cache_config.max_size_mb"
+        :min="128"
+        :max="2048"
+        :step="128"
+      />
+      <span class="unit">MB</span>
+    </el-form-item>
+
+    <!-- 更新策略 -->
+    <el-divider>{{ t('settings.updateStrategy') }}</el-divider>
+
+    <el-form-item :label="t('settings.updateMode')">
+      <el-radio-group v-model="marketDataConfig.update_mode">
+        <el-radio label="interval">{{ t('settings.intervalMode') }}</el-radio>
+        <el-radio label="n_periods">{{ t('settings.nPeriodsMode') }}</el-radio>
+      </el-radio-group>
+    </el-form-item>
+
+    <el-form-item
+      v-if="marketDataConfig.update_mode === 'interval'"
+      :label="t('settings.updateInterval')"
+    >
+      <el-input-number
+        v-model="marketDataConfig.update_interval_seconds"
+        :min="1"
+        :max="60"
+      />
+      <span class="unit">{{ t('common.seconds') }}</span>
+    </el-form-item>
+
+    <el-form-item
+      v-if="marketDataConfig.update_mode === 'n_periods'"
+      :label="t('settings.nPeriods')"
+    >
+      <el-input-number
+        v-model="marketDataConfig.n_periods"
+        :min="1"
+        :max="10"
+      />
+    </el-form-item>
+
+    <el-form-item>
+      <el-button type="primary" @click="saveMarketDataConfig">
+        {{ t('settings.save') }}
+      </el-button>
+    </el-form-item>
+  </el-form>
+</el-tab-pane>
+```
+
+---
+
+## 13. 待明确的技术细节
 2. **数据库表结构**：需要设计完整的PostgreSQL表结构
 3. **API接口规范**：RESTful API的详细端点设计
 4. **WebSocket实时推送**：实时数据推送的技术方案

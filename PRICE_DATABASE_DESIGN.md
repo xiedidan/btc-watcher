@@ -251,4 +251,332 @@ max_connections = 200
 4. **同步机制**: 专门的同步状态表追踪数据同步
 5. **性能优化**: 合理的索引策略和数据清理机制
 
-接下来我将设计价格订阅服务的具体实现。
+### 7. 技术指标数据表
+```sql
+-- 技术指标数据表（存储计算后的指标值）
+CREATE TABLE technical_indicators (
+    id BIGSERIAL PRIMARY KEY,
+    trading_pair_id INTEGER REFERENCES trading_pairs(id) ON DELETE CASCADE,
+    timeframe VARCHAR(10) NOT NULL, -- 1m, 5m, 15m, 1h, 4h, 1d
+    timestamp TIMESTAMP NOT NULL,
+    indicator_type VARCHAR(20) NOT NULL, -- MA, MACD, RSI, BOLL, etc.
+    indicator_params JSONB, -- {"period": 14, "type": "EMA"} 等参数
+    indicator_values JSONB NOT NULL, -- {"ma5": 45230.5, "ma10": 45100.2} 或 {"macd": 120.5, "signal": 115.3, "histogram": 5.2}
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(trading_pair_id, timeframe, timestamp, indicator_type, indicator_params)
+);
+
+-- 创建索引
+CREATE INDEX idx_indicators_pair_timeframe_time ON technical_indicators(trading_pair_id, timeframe, timestamp DESC);
+CREATE INDEX idx_indicators_type ON technical_indicators(indicator_type);
+CREATE INDEX idx_indicators_timestamp ON technical_indicators(timestamp DESC);
+
+-- 创建分区（按timeframe分区）
+CREATE TABLE technical_indicators_1m PARTITION OF technical_indicators
+FOR VALUES IN ('1m');
+
+CREATE TABLE technical_indicators_5m PARTITION OF technical_indicators
+FOR VALUES IN ('5m');
+
+CREATE TABLE technical_indicators_1h PARTITION OF technical_indicators
+FOR VALUES IN ('1h');
+
+CREATE TABLE technical_indicators_1d PARTITION OF technical_indicators
+FOR VALUES IN ('1d');
+```
+
+### 8. 系统配置表
+```sql
+-- 系统配置表（全局单例配置）
+CREATE TABLE system_config (
+    id INTEGER PRIMARY KEY DEFAULT 1, -- 仅一条记录
+
+    -- 市场数据配置
+    market_data JSONB DEFAULT '{
+        "default_exchange": "binance",
+        "enabled_exchanges": ["binance", "okx", "bybit", "bitget"],
+        "default_klines_limit": 200,
+        "cache_config": {
+            "ttl": {
+                "1m": 60,
+                "5m": 300,
+                "15m": 900,
+                "1h": 3600,
+                "4h": 14400,
+                "1d": 86400
+            },
+            "max_size_mb": 512
+        },
+        "update_mode": "interval",
+        "update_interval_seconds": 5,
+        "n_periods": 1,
+        "auto_failover": true,
+        "rate_limit_fallback": true,
+        "historical_data_days": {
+            "1m": 7,
+            "5m": 30,
+            "15m": 30,
+            "1h": 90,
+            "4h": 365,
+            "1d": 365
+        }
+    }'::jsonb,
+
+    -- 其他系统级配置可以继续扩展
+    -- monitoring JSONB DEFAULT '{...}'::jsonb,
+    -- logging JSONB DEFAULT '{...}'::jsonb,
+
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT single_row_constraint CHECK (id = 1)
+);
+
+-- 插入默认系统配置
+INSERT INTO system_config (id) VALUES (1)
+ON CONFLICT (id) DO NOTHING;
+
+-- 创建更新触发器
+CREATE OR REPLACE FUNCTION update_system_config_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_system_config_timestamp
+BEFORE UPDATE ON system_config
+FOR EACH ROW
+EXECUTE FUNCTION update_system_config_timestamp();
+```
+
+## Redis缓存策略设计
+
+### 1. 缓存键命名规范
+```
+# K线数据缓存
+klines:{exchange}:{symbol}:{timeframe}:{start_time}:{end_time}
+示例: klines:binance:BTCUSDT:1h:1640000000:1640003600
+
+# 技术指标缓存
+indicators:{exchange}:{symbol}:{timeframe}:{indicator_type}:{params_hash}:{start_time}:{end_time}
+示例: indicators:binance:BTCUSDT:1h:MA:abc123:1640000000:1640003600
+
+# 实时Ticker缓存
+ticker:{exchange}:{symbol}
+示例: ticker:binance:BTCUSDT
+
+# 交易所状态缓存
+exchange:status:{exchange}
+示例: exchange:status:binance
+```
+
+### 2. 缓存数据结构
+```python
+# K线数据 (List of Hashes)
+# Key: klines:binance:BTCUSDT:1h:1640000000:1640003600
+# Value: [
+#   {
+#     "open_time": "1640000000",
+#     "close_time": "1640003600",
+#     "open": "45230.5",
+#     "high": "45450.2",
+#     "low": "45100.3",
+#     "close": "45320.8",
+#     "volume": "1234.56"
+#   },
+#   ...
+# ]
+
+# 技术指标数据 (Hash)
+# Key: indicators:binance:BTCUSDT:1h:MA:default:1640000000:1640003600
+# Value: {
+#   "timestamp": "1640003600",
+#   "ma5": "45230.5",
+#   "ma10": "45100.2",
+#   "ma20": "44980.7",
+#   "ma30": "44850.3"
+# }
+
+# Ticker数据 (Hash with TTL)
+# Key: ticker:binance:BTCUSDT
+# TTL: 5秒
+# Value: {
+#   "price": "45320.8",
+#   "bid": "45320.5",
+#   "ask": "45321.0",
+#   "volume_24h": "12345.67",
+#   "change_24h": "2.34",
+#   "timestamp": "1640003600"
+# }
+```
+
+### 3. 缓存更新策略
+```python
+# 三层数据访问优先级
+def get_klines(exchange, symbol, timeframe, limit):
+    """
+    1. 尝试从Redis缓存读取
+    2. 缓存未命中，从PostgreSQL读取并更新缓存
+    3. 数据库无数据，从CCXT API获取并同时写入缓存和数据库
+    """
+
+    # Layer 1: Redis Cache
+    cache_key = f"klines:{exchange}:{symbol}:{timeframe}:latest:{limit}"
+    cached_data = redis.get(cache_key)
+    if cached_data:
+        return json.loads(cached_data)
+
+    # Layer 2: PostgreSQL
+    db_data = db.query(Klines).filter(
+        trading_pair=symbol,
+        timeframe=timeframe
+    ).order_by(Klines.open_time.desc()).limit(limit).all()
+
+    if db_data:
+        # 更新缓存
+        ttl = get_ttl_for_timeframe(timeframe)
+        redis.setex(cache_key, ttl, json.dumps(db_data))
+        return db_data
+
+    # Layer 3: CCXT API
+    api_data = ccxt_client.fetch_ohlcv(symbol, timeframe, limit=limit)
+
+    # 同时写入数据库和缓存
+    db.bulk_insert(api_data)
+    redis.setex(cache_key, ttl, json.dumps(api_data))
+
+    return api_data
+
+# 限流降级策略
+def get_klines_with_fallback(exchange, symbol, timeframe, limit):
+    """
+    遇到API限流时的降级策略
+    """
+    try:
+        return get_klines(exchange, symbol, timeframe, limit)
+    except RateLimitError:
+        # 降级到仅使用缓存和数据库
+        logger.warning(f"API rate limited, falling back to cache/db")
+
+        # 尝试缓存
+        cached = get_from_cache(...)
+        if cached:
+            return cached
+
+        # 降级到数据库历史数据
+        return get_from_database(...)
+```
+
+### 4. 缓存容量管理
+```python
+# Redis内存配置
+maxmemory: 512mb
+maxmemory-policy: allkeys-lru  # LRU淘汰策略
+
+# 监控缓存使用率
+def monitor_cache_usage():
+    """
+    监控Redis缓存使用情况
+    """
+    info = redis.info('memory')
+    used_memory_mb = info['used_memory'] / 1024 / 1024
+    max_memory_mb = 512
+
+    usage_percent = (used_memory_mb / max_memory_mb) * 100
+
+    if usage_percent > 90:
+        logger.warning(f"Cache usage high: {usage_percent}%")
+        # 触发缓存清理或扩容告警
+```
+
+## 数据更新调度设计
+
+### 1. 固定间隔模式
+```python
+# 所有时间周期统一按5秒间隔更新
+@scheduler.scheduled_job('interval', seconds=5)
+async def update_market_data_interval_mode():
+    """
+    固定间隔更新模式
+    """
+    config = get_system_config()
+    interval = config['market_data']['update_interval_seconds']
+
+    for exchange in config['market_data']['enabled_exchanges']:
+        for symbol in get_active_symbols(exchange):
+            for timeframe in ['1m', '5m', '15m', '1h', '4h', '1d']:
+                await update_klines(exchange, symbol, timeframe)
+                await calculate_indicators(exchange, symbol, timeframe)
+```
+
+### 2. N周期模式
+```python
+# 根据时间周期倍数关系更新（N=1示例）
+TIMEFRAME_UPDATE_MAPPING = {
+    '1m': 60,      # 每60秒更新
+    '5m': 300,     # 每5分钟更新
+    '15m': 900,    # 每15分钟更新
+    '1h': 3600,    # 每1小时更新
+    '4h': 14400,   # 每4小时更新
+    '1d': 14400    # 每4小时更新（1d的N倍周期是4h）
+}
+
+@scheduler.scheduled_job('interval', seconds=60)
+async def update_market_data_n_periods_mode():
+    """
+    N周期更新模式
+    """
+    current_time = int(time.time())
+
+    for timeframe, update_interval in TIMEFRAME_UPDATE_MAPPING.items():
+        if current_time % update_interval == 0:
+            # 到达更新时间点
+            await update_timeframe_data(timeframe)
+```
+
+### 3. 数据清理优化
+```sql
+-- 更新数据清理策略（适配技术指标）
+CREATE OR REPLACE FUNCTION cleanup_old_market_data()
+RETURNS void AS $$
+BEGIN
+    -- Ticker数据：保留3个月
+    DELETE FROM price_tickers
+    WHERE timestamp < CURRENT_TIMESTAMP - INTERVAL '3 months';
+
+    -- K线数据按时间周期不同保留
+    DELETE FROM klines WHERE timeframe = '1m' AND open_time < CURRENT_TIMESTAMP - INTERVAL '7 days';
+    DELETE FROM klines WHERE timeframe = '5m' AND open_time < CURRENT_TIMESTAMP - INTERVAL '30 days';
+    DELETE FROM klines WHERE timeframe = '15m' AND open_time < CURRENT_TIMESTAMP - INTERVAL '30 days';
+    DELETE FROM klines WHERE timeframe = '1h' AND open_time < CURRENT_TIMESTAMP - INTERVAL '90 days';
+    DELETE FROM klines WHERE timeframe = '4h' AND open_time < CURRENT_TIMESTAMP - INTERVAL '1 year';
+    DELETE FROM klines WHERE timeframe = '1d' AND open_time < CURRENT_TIMESTAMP - INTERVAL '5 years';
+
+    -- 技术指标数据：与K线保持一致的保留期
+    DELETE FROM technical_indicators WHERE timeframe = '1m' AND timestamp < CURRENT_TIMESTAMP - INTERVAL '7 days';
+    DELETE FROM technical_indicators WHERE timeframe = '5m' AND timestamp < CURRENT_TIMESTAMP - INTERVAL '30 days';
+    DELETE FROM technical_indicators WHERE timeframe = '15m' AND timestamp < CURRENT_TIMESTAMP - INTERVAL '30 days';
+    DELETE FROM technical_indicators WHERE timeframe = '1h' AND timestamp < CURRENT_TIMESTAMP - INTERVAL '90 days';
+    DELETE FROM technical_indicators WHERE timeframe = '4h' AND timestamp < CURRENT_TIMESTAMP - INTERVAL '1 year';
+    DELETE FROM technical_indicators WHERE timeframe = '1d' AND timestamp < CURRENT_TIMESTAMP - INTERVAL '5 years';
+END;
+$$ LANGUAGE plpgsql;
+
+-- 每天凌晨2点执行清理
+SELECT cron.schedule('cleanup-market-data', '0 2 * * *', 'SELECT cleanup_old_market_data();');
+```
+
+## 数据库设计总结
+
+这个增强的数据库设计具有以下特点：
+
+1. **技术指标存储**: 独立的technical_indicators表，支持多种指标类型和参数配置
+2. **系统配置管理**: 单例SystemConfig表，遵循现有UserSettings的JSON列模式
+3. **三层数据访问**: Redis缓存 → PostgreSQL存储 → CCXT API，确保高性能和高可用
+4. **灵活的更新策略**: 支持固定间隔和N周期两种模式，满足不同使用场景
+5. **限流降级保护**: API限流时自动降级到缓存/数据库，避免服务中断
+6. **智能缓存管理**: LRU淘汰策略，自动监控和告警
+7. **数据生命周期管理**: 按时间周期设置不同的数据保留期，平衡存储成本和查询需求
+8. **分区优化**: 按timeframe分区，提升查询和清理性能

@@ -111,8 +111,22 @@ export const useWebSocketStore = defineStore('websocket', {
       // 注册事件监听器
       this.setupListeners()
 
-      // 连接WebSocket
-      const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
+      // 动态构建WebSocket URL
+      let wsUrl = import.meta.env.VITE_WS_URL
+
+      if (!wsUrl) {
+        // 根据当前页面协议和主机自动构建WebSocket URL
+        // 但是使用当前页面的协议和host（这样会通过Vite dev server的代理）
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        const host = window.location.host  // 这会是前端dev server的地址（如localhost:3000）
+        wsUrl = `${protocol}//${host}`
+
+        console.log('🔌 Auto-constructed WebSocket URL:', wsUrl)
+      } else {
+        console.log('🔌 Using configured WebSocket URL:', wsUrl)
+      }
+
+      console.log('🔌 Connecting to WebSocket:', wsUrl)
       wsClient.connect(token, wsUrl)
     },
 

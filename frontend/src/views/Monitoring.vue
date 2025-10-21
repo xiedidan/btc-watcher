@@ -70,6 +70,22 @@
       </el-col>
     </el-row>
 
+    <!-- 容量告警 -->
+    <el-row v-if="showCapacityAlert" :gutter="12" class="alert-row">
+      <el-col :span="24">
+        <el-alert
+          :title="capacityAlertTitle"
+          :type="capacityAlertType"
+          :closable="false"
+          show-icon
+        >
+          <template #default>
+            {{ capacityAlertMessage }}
+          </template>
+        </el-alert>
+      </el-col>
+    </el-row>
+
     <!-- 策略和容量统计 -->
     <el-row :gutter="12" class="stats-row">
       <el-col :span="6">
@@ -115,13 +131,13 @@
       </el-col>
 
       <el-col :span="6">
-        <el-card class="stat-card">
+        <el-card class="stat-card" :class="{ 'capacity-warning': isCapacityWarning, 'capacity-critical': isCapacityCritical }">
           <div class="stat-content">
-            <div class="stat-icon" style="background: #F56C6C">
+            <div class="stat-icon" :style="{ background: getCapacityColor() }">
               <el-icon><DataLine /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ capacity.utilization_percent || 0 }}%</div>
+              <div class="stat-value">{{ (capacity.utilization_percent || 0).toFixed(1) }}%</div>
               <div class="stat-label">{{ t('monitoring.capacityUsage') }}</div>
             </div>
           </div>
@@ -175,7 +191,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { systemAPI, monitoringAPI } from '@/api'
 import {
@@ -206,6 +222,44 @@ const capacity = ref({})
 const lastUpdate = ref('')
 
 let refreshTimer = null
+
+// 容量告警计算属性
+const showCapacityAlert = computed(() => {
+  return (capacity.value.utilization_percent || 0) >= 80
+})
+
+const isCapacityWarning = computed(() => {
+  const util = capacity.value.utilization_percent || 0
+  return util >= 80 && util < 90
+})
+
+const isCapacityCritical = computed(() => {
+  return (capacity.value.utilization_percent || 0) >= 90
+})
+
+const capacityAlertType = computed(() => {
+  if (isCapacityCritical.value) return 'error'
+  if (isCapacityWarning.value) return 'warning'
+  return 'info'
+})
+
+const capacityAlertTitle = computed(() => {
+  if (isCapacityCritical.value) return t('monitoring.capacityCritical')
+  if (isCapacityWarning.value) return t('monitoring.capacityWarning')
+  return t('monitoring.capacityInfo')
+})
+
+const capacityAlertMessage = computed(() => {
+  const util = (capacity.value.utilization_percent || 0).toFixed(1)
+  const available = capacity.value.available_slots || 0
+  if (isCapacityCritical.value) {
+    return t('monitoring.capacityCriticalMessage', { util, available })
+  }
+  if (isCapacityWarning.value) {
+    return t('monitoring.capacityWarningMessage', { util, available })
+  }
+  return ''
+})
 
 // 获取系统监控数据
 const fetchMonitoringData = async () => {
@@ -265,6 +319,14 @@ const getProgressColor = (percentage) => {
   return '#F56C6C'
 }
 
+const getCapacityColor = () => {
+  const util = capacity.value.utilization_percent || 0
+  if (util >= 90) return '#F56C6C'  // Red - Critical
+  if (util >= 80) return '#E6A23C'  // Orange - Warning
+  if (util >= 60) return '#E6A23C'  // Orange
+  return '#67C23A'  // Green - Normal
+}
+
 const formatBytes = (bytes) => {
   if (!bytes || bytes === 0) return '0 B'
   const k = 1024
@@ -293,6 +355,10 @@ onUnmounted(() => {
 }
 
 .health-row {
+  margin-bottom: 6px;
+}
+
+.alert-row {
   margin-bottom: 6px;
 }
 
@@ -406,5 +472,33 @@ html.dark .stat-label {
 
 .details-row {
   margin-bottom: 6px;
+}
+
+.capacity-warning {
+  border: 2px solid #E6A23C !important;
+  animation: pulse-warning 2s infinite;
+}
+
+.capacity-critical {
+  border: 2px solid #F56C6C !important;
+  animation: pulse-critical 1.5s infinite;
+}
+
+@keyframes pulse-warning {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(230, 162, 60, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(230, 162, 60, 0);
+  }
+}
+
+@keyframes pulse-critical {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(245, 108, 108, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(245, 108, 108, 0);
+  }
 }
 </style>
