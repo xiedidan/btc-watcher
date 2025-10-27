@@ -288,13 +288,19 @@ class FreqTradeGatewayManager:
             "dry_run": strategy_config.get("dry_run", True),
             "dry_run_wallet": strategy_config.get("dry_run_wallet", 1000),
 
+            # 必需字段：计价货币
+            "stake_currency": "USDT",
+            "stake_amount": strategy_config.get("stake_amount", 100),
+            "max_open_trades": strategy_config.get("max_open_trades", 3),
+
             "exchange": {
                 "name": strategy_config["exchange"],
                 "key": "",
                 "secret": "",
                 "ccxt_config": {
                     "enableRateLimit": True,
-                    "proxies": proxy_config
+                    "proxies": proxy_config,
+                    "aiohttp_proxy": proxy_config.get("http") or proxy_config.get("https") if proxy_config else None
                 },
                 "pair_whitelist": strategy_config["pair_whitelist"],
                 "pair_blacklist": strategy_config.get("pair_blacklist", [])
@@ -302,11 +308,31 @@ class FreqTradeGatewayManager:
 
             "pairlists": [{"method": "StaticPairList"}],
 
+            # 价格配置
+            "entry_pricing": {
+                "price_side": "same",
+                "use_order_book": True,
+                "order_book_top": 1,
+                "price_last_balance": 0.0,
+                "check_depth_of_market": {
+                    "enabled": False,
+                    "bids_to_ask_delta": 1
+                }
+            },
+
+            "exit_pricing": {
+                "price_side": "same",
+                "use_order_book": True,
+                "order_book_top": 1
+            },
+
             # 独立API端口配置
             "api_server": {
                 "enabled": True,
                 "listen_ip_address": "127.0.0.1",
                 "listen_port": port,
+                "username": "btc_watcher",
+                "password": f"btc-watcher-pass-{strategy_config['id']}",
                 "verbosity": "info",
                 "enable_openapi": True,
                 "jwt_secret_key": f"btc-watcher-strategy-{strategy_config['id']}",
@@ -344,10 +370,30 @@ class FreqTradeGatewayManager:
             "--logfile", str(log_file)
         ]
 
+        # 读取配置文件获取代理设置
+        import json
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+
+        # 准备环境变量（继承当前环境）
+        env = os.environ.copy()
+
+        # 如果配置了代理，设置环境变量
+        proxies = config.get('exchange', {}).get('ccxt_config', {}).get('proxies', {})
+        if proxies:
+            if 'http' in proxies:
+                env['HTTP_PROXY'] = proxies['http']
+                env['http_proxy'] = proxies['http']
+            if 'https' in proxies:
+                env['HTTPS_PROXY'] = proxies['https']
+                env['https_proxy'] = proxies['https']
+            logger.info(f"Starting FreqTrade with proxy: {proxies}")
+
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=env,
             preexec_fn=os.setsid if os.name != 'nt' else None
         )
 
@@ -492,3 +538,157 @@ class FreqTradeGatewayManager:
         except Exception as e:
             logger.error(f"Failed to get proxy configuration: {e}", exc_info=True)
             return {}
+
+    async def recover_running_strategies(self, db, max_retries: int = 2) -> dict:
+        """
+        启动时恢复数据库中状态为running的策略
+
+        Args:
+            db: 数据库session
+            max_retries: 单个策略最大重试次数
+
+        Returns:
+            dict: 恢复结果统计
+        """
+        from sqlalchemy import select, update
+        from models.strategy import Strategy
+
+        logger.info("Starting strategy recovery process...")
+
+        results = {
+            "total_found": 0,
+            "recovered": 0,
+            "failed": 0,
+            "reset": 0,
+            "details": []
+        }
+
+        try:
+            # 1. 查询所有运行中的策略
+            stmt = select(Strategy).where(Strategy.status == 'running')
+            result = await db.execute(stmt)
+            running_strategies = result.scalars().all()
+
+            results["total_found"] = len(running_strategies)
+            logger.info(f"Found {results['total_found']} strategies in 'running' state")
+
+            if not running_strategies:
+                logger.info("No running strategies to recover")
+                return results
+
+            # 2. 逐个尝试恢复策略
+            for strategy in running_strategies:
+                strategy_id = strategy.id
+                logger.info(f"Attempting to recover strategy {strategy_id}: {strategy.name}")
+
+                retry_count = 0
+                recovered = False
+
+                while retry_count < max_retries and not recovered:
+                    try:
+                        # 准备策略配置
+                        strategy_config = {
+                            "id": strategy.id,
+                            "name": strategy.name,
+                            "strategy_class": strategy.strategy_class,
+                            "exchange": strategy.exchange,
+                            "timeframe": strategy.timeframe,
+                            "pair_whitelist": strategy.pair_whitelist,
+                            "pair_blacklist": strategy.pair_blacklist,
+                            "dry_run": strategy.dry_run,
+                            "dry_run_wallet": strategy.dry_run_wallet,
+                            "stake_amount": strategy.stake_amount,
+                            "max_open_trades": strategy.max_open_trades,
+                            "proxy_id": strategy.proxy_id
+                        }
+
+                        # 尝试创建策略
+                        success = await self.create_strategy(strategy_config, db)
+
+                        if success:
+                            logger.info(f"✅ Successfully recovered strategy {strategy_id}")
+                            results["recovered"] += 1
+                            results["details"].append({
+                                "strategy_id": strategy_id,
+                                "name": strategy.name,
+                                "status": "recovered",
+                                "retries": retry_count
+                            })
+                            recovered = True
+                        else:
+                            retry_count += 1
+                            if retry_count < max_retries:
+                                logger.warning(f"Failed to recover strategy {strategy_id}, retry {retry_count}/{max_retries}")
+                                await asyncio.sleep(2)  # 重试前等待
+
+                    except Exception as e:
+                        retry_count += 1
+                        logger.error(f"Error recovering strategy {strategy_id} (attempt {retry_count}/{max_retries}): {e}")
+                        if retry_count < max_retries:
+                            await asyncio.sleep(2)
+
+                # 3. 如果所有重试都失败，重置状态为stopped
+                if not recovered:
+                    logger.warning(f"❌ Failed to recover strategy {strategy_id} after {max_retries} attempts, resetting to 'stopped'")
+                    try:
+                        stmt = update(Strategy).where(
+                            Strategy.id == strategy_id
+                        ).values(status='stopped')
+                        await db.execute(stmt)
+                        await db.commit()
+
+                        results["failed"] += 1
+                        results["reset"] += 1
+                        results["details"].append({
+                            "strategy_id": strategy_id,
+                            "name": strategy.name,
+                            "status": "failed_and_reset",
+                            "retries": max_retries
+                        })
+                    except Exception as e:
+                        logger.error(f"Failed to reset strategy {strategy_id} status: {e}")
+
+            # 4. 日志摘要
+            logger.info("="*50)
+            logger.info("Strategy Recovery Summary:")
+            logger.info(f"  Total strategies found: {results['total_found']}")
+            logger.info(f"  Successfully recovered: {results['recovered']}")
+            logger.info(f"  Failed and reset: {results['failed']}")
+            logger.info("="*50)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Critical error during strategy recovery: {e}", exc_info=True)
+            results["error"] = str(e)
+            return results
+
+    async def reset_all_strategies_status(self, db) -> int:
+        """
+        将所有running状态的策略重置为stopped
+
+        Args:
+            db: 数据库session
+
+        Returns:
+            int: 重置的策略数量
+        """
+        from sqlalchemy import update
+        from models.strategy import Strategy
+
+        try:
+            stmt = update(Strategy).where(
+                Strategy.status == 'running'
+            ).values(status='stopped')
+
+            result = await db.execute(stmt)
+            await db.commit()
+
+            reset_count = result.rowcount
+            logger.info(f"Reset {reset_count} strategies to 'stopped' status")
+            return reset_count
+
+        except Exception as e:
+            logger.error(f"Failed to reset strategy statuses: {e}", exc_info=True)
+            await db.rollback()
+            return 0

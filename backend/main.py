@@ -71,6 +71,73 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize FreqTrade manager: {e}")
 
+    # Strategy Recovery - 智能恢复运行中的策略
+    if settings.AUTO_RECOVER_STRATEGIES and freqtrade_manager:
+        try:
+            # 获取数据库session
+            db_gen = get_db()
+            db = await db_gen.__anext__()
+
+            logger.info("="*60)
+            logger.info("Starting Strategy Recovery (AUTO_RECOVER_STRATEGIES=True)")
+            logger.info("="*60)
+
+            # 尝试恢复策略
+            recovery_results = await freqtrade_manager.recover_running_strategies(
+                db,
+                max_retries=settings.MAX_RECOVERY_RETRIES
+            )
+
+            # 记录恢复结果
+            if recovery_results["total_found"] > 0:
+                logger.info("📊 Recovery Results:")
+                logger.info(f"   ✅ Recovered: {recovery_results['recovered']}")
+                logger.info(f"   ❌ Failed: {recovery_results['failed']}")
+                logger.info(f"   🔄 Reset: {recovery_results['reset']}")
+
+                # 如果有恢复失败的策略，记录详情
+                if recovery_results['failed'] > 0:
+                    logger.warning("⚠️  Some strategies could not be recovered and were reset to 'stopped'")
+                    for detail in recovery_results['details']:
+                        if detail['status'] == 'failed_and_reset':
+                            logger.warning(f"   - Strategy {detail['strategy_id']} ({detail['name']})")
+            else:
+                logger.info("✅ No strategies needed recovery")
+
+            logger.info("="*60)
+
+            # 关闭数据库session
+            try:
+                await db_gen.aclose()
+            except:
+                pass
+
+        except Exception as e:
+            logger.error(f"Strategy recovery failed: {e}", exc_info=True)
+            logger.warning("Continuing startup without strategy recovery...")
+    elif not settings.AUTO_RECOVER_STRATEGIES:
+        # 如果禁用了自动恢复，重置所有策略状态
+        try:
+            db_gen = get_db()
+            db = await db_gen.__anext__()
+
+            logger.info("="*60)
+            logger.info("AUTO_RECOVER_STRATEGIES=False - Resetting all strategies")
+            logger.info("="*60)
+
+            reset_count = await freqtrade_manager.reset_all_strategies_status(db)
+            logger.info(f"✅ Reset {reset_count} strategies to 'stopped' status")
+            logger.info("="*60)
+
+            # 关闭数据库session
+            try:
+                await db_gen.aclose()
+            except:
+                pass
+
+        except Exception as e:
+            logger.error(f"Failed to reset strategy statuses: {e}", exc_info=True)
+
     # Initialize monitoring service
     try:
         monitoring_service = MonitoringService(freqtrade_manager)

@@ -674,7 +674,157 @@ docker-compose -f docker-compose.price-only.yml up -d
 docker-compose --profile sync up -d
 ```
 
-### 4.3 环境变量配置更新
+### 4.3 Alpha部署环境（生产/外部访问环境）
+
+#### 4.3.1 架构概述
+Alpha环境是用于生产部署和外部访问的环境配置，通过Nginx反向代理和FRP内网穿透实现外部访问。
+
+```
+外网访问流程:
+Internet ──▶ FRP Server ──▶ FRP Client ──▶ Nginx (80/443) ──▶ Frontend (8501)
+                                                    │
+                                                    └──▶ Backend API (8000)
+```
+
+#### 4.3.2 端口配置
+```yaml
+# Alpha环境端口映射
+Frontend (Streamlit):  8501  # Nginx反向代理目标端口
+Backend API:           8000  # API服务端口
+Nginx:                 80    # HTTP外部访问端口
+                       443   # HTTPS外部访问端口（可选）
+PostgreSQL:            5432  # 数据库（内部访问）
+Redis:                 6379  # 缓存（内部访问）
+```
+
+#### 4.3.3 Nginx配置示例（Alpha环境）
+```nginx
+# /etc/nginx/sites-available/btc-watcher-alpha.conf
+
+server {
+    listen 80;
+    server_name _;  # 或配置具体域名
+
+    # 前端代理到8501端口
+    location / {
+        proxy_pass http://localhost:8501;
+        proxy_http_version 1.1;
+
+        # WebSocket支持
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # 常规代理头
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Streamlit特定配置
+        proxy_read_timeout 86400;
+        proxy_buffering off;
+    }
+
+    # 后端API代理
+    location /api/ {
+        proxy_pass http://localhost:8000/api/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket API代理
+    location /ws/ {
+        proxy_pass http://localhost:8000/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+#### 4.3.4 FRP配置（内网穿透）
+
+**FRP Client配置** (`frpc.ini`):
+```ini
+[common]
+server_addr = <FRP服务器地址>
+server_port = 7000
+token = <认证令牌>
+
+[btc-watcher-alpha]
+type = tcp
+local_ip = 127.0.0.1
+local_port = 80              # Nginx监听端口
+remote_port = 60001          # 外网访问端口
+```
+
+**访问方式**:
+- 外部访问：`http://<FRP服务器IP>:60001`
+- 内部访问：`http://localhost:80` 或 `http://localhost:8501`
+
+#### 4.3.5 部署步骤
+
+1. **启动后端服务**
+```bash
+cd /path/to/btc-watcher/backend
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+2. **启动前端服务**
+```bash
+cd /path/to/btc-watcher/frontend
+streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+```
+
+3. **配置Nginx**
+```bash
+sudo cp nginx/btc-watcher-alpha.conf /etc/nginx/sites-available/
+sudo ln -s /etc/nginx/sites-available/btc-watcher-alpha.conf /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+4. **启动FRP客户端**
+```bash
+./frpc -c frpc.ini
+```
+
+#### 4.3.6 安全建议
+
+- **启用HTTPS**: 配置SSL证书（Let's Encrypt）
+- **访问控制**:
+  ```nginx
+  # 限制访问IP（可选）
+  allow 10.0.0.0/8;
+  allow 192.168.0.0/16;
+  deny all;
+  ```
+- **认证保护**:
+  - 在Nginx层添加Basic Auth
+  - 或在应用层实现JWT认证
+- **防火墙配置**: 只开放必要端口（80, 443, FRP端口）
+
+#### 4.3.7 监控和维护
+
+```bash
+# 检查服务状态
+systemctl status nginx
+ps aux | grep streamlit
+ps aux | grep uvicorn
+ps aux | grep frpc
+
+# 查看日志
+tail -f /var/log/nginx/access.log
+tail -f /var/log/nginx/error.log
+tail -f backend/logs/app.log
+tail -f frontend/logs/streamlit.log
+```
+
+### 4.4 环境变量配置更新
 
 ```bash
 # .env 文件新增配置项
@@ -706,9 +856,9 @@ REDIS_MAXMEMORY_POLICY=allkeys-lru
 MONITORED_SYMBOLS=BTCUSDT,ETHUSDT,ADAUSDT,DOTUSDT,LINKUSDT,SOLUSDT
 ```
 
-### 4.4 资源使用估算
+### 4.5 资源使用估算
 
-#### 4.4.1 内存使用（16GB系统）
+#### 4.5.1 内存使用（16GB系统）
 ```
 PostgreSQL:     ~6GB  (shared_buffers 4GB + 其他)
 Redis:          ~1GB  (价格数据缓存)
@@ -722,7 +872,7 @@ Web/Nginx:      ~100MB (静态文件服务)
 总计:          ~15GB (在16GB系统上运行良好)
 ```
 
-#### 4.4.2 磁盘使用估算（按天）
+#### 4.5.2 磁盘使用估算（按天）
 ```
 价格数据存储（5个交易对）:
 - Ticker数据: ~50MB/天
@@ -736,9 +886,9 @@ Web/Nginx:      ~100MB (静态文件服务)
 年度总计: ~27GB (包含数据清理)
 ```
 
-### 4.5 部署脚本更新
+### 4.6 部署脚本更新
 
-#### 4.5.1 启动脚本增强功能
+#### 4.6.1 启动脚本增强功能
 ```bash
 # scripts/start.sh 新增选项
 
@@ -755,7 +905,7 @@ Web/Nginx:      ~100MB (静态文件服务)
 ./scripts/start.sh --full
 ```
 
-#### 4.5.2 监控和维护
+#### 4.6.2 监控和维护
 ```bash
 # 新增管理脚本
 

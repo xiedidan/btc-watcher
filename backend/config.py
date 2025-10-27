@@ -37,10 +37,16 @@ class Settings(BaseSettings):
 
     # FreqTrade
     FREQTRADE_VERSION: str = "2025.8"
+    FREQTRADE_COMMAND: str = "freqtrade"  # Path to freqtrade command, can be absolute path
     FREQTRADE_GATEWAY_PORT: int = 8080
     FREQTRADE_BASE_PORT: int = 8081
     FREQTRADE_MAX_PORT: int = 9080
     MAX_CONCURRENT_STRATEGIES: int = 999
+
+    # Strategy Recovery
+    AUTO_RECOVER_STRATEGIES: bool = True  # 启动时自动恢复运行中的策略
+    RECOVERY_TIMEOUT: int = 300  # 策略恢复超时时间（秒）
+    MAX_RECOVERY_RETRIES: int = 2  # 单个策略最大重试次数
 
     # Notification Services
     TELEGRAM_BOT_TOKEN: Optional[str] = None
