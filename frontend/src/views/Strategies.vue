@@ -20,10 +20,12 @@
       <!-- 搜索栏 -->
       <el-form :inline="true" class="search-form">
         <el-form-item :label="t('strategy.status')">
-          <el-select v-model="searchForm.status" :placeholder="t('strategy.all')" clearable @change="fetchData" style="width: 120px">
+          <el-select v-model="searchForm.status" :placeholder="t('strategy.all')" clearable @change="fetchData" style="width: 150px">
             <el-option :label="t('strategy.all')" value="" />
             <el-option :label="t('strategy.running')" value="running" />
             <el-option :label="t('strategy.stopped')" value="stopped" />
+            <el-option label="正在启动" value="starting" />
+            <el-option label="正在停止" value="stopping" />
             <el-option :label="t('strategy.error')" value="error" />
           </el-select>
         </el-form-item>
@@ -63,17 +65,19 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('strategy.status')" width="100">
+        <el-table-column :label="t('strategy.status')" width="120">
           <template #default="{ row }">
             <el-tag v-if="row.status === 'running'" type="success">{{ t('strategy.running') }}</el-tag>
             <el-tag v-else-if="row.status === 'stopped'" type="info">{{ t('strategy.stopped') }}</el-tag>
+            <el-tag v-else-if="row.status === 'starting'" type="warning" :icon="Loading">正在启动</el-tag>
+            <el-tag v-else-if="row.status === 'stopping'" type="warning" :icon="Loading">正在停止</el-tag>
             <el-tag v-else type="danger">{{ t('strategy.error') }}</el-tag>
           </template>
         </el-table-column>
 
         <el-table-column prop="created_at" :label="t('strategy.createdAt')" width="180" />
 
-        <el-table-column :label="t('common.edit')" width="220" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'stopped'"
@@ -84,12 +88,30 @@
               {{ t('strategy.start') }}
             </el-button>
             <el-button
-              v-else
+              v-else-if="row.status === 'running'"
               type="warning"
               size="small"
               @click="handleStop(row)"
             >
               {{ t('strategy.stop') }}
+            </el-button>
+            <el-button
+              v-else-if="row.status === 'starting'"
+              type="warning"
+              size="small"
+              disabled
+              loading
+            >
+              正在启动
+            </el-button>
+            <el-button
+              v-else-if="row.status === 'stopping'"
+              type="warning"
+              size="small"
+              disabled
+              loading
+            >
+              正在停止
             </el-button>
             <el-button
               type="primary"
@@ -102,6 +124,7 @@
               type="danger"
               size="small"
               @click="handleDelete(row)"
+              :disabled="row.status === 'starting' || row.status === 'stopping'"
             >
               {{ t('common.delete') }}
             </el-button>
@@ -361,6 +384,8 @@
                 <el-descriptions-item :label="t('strategy.status')">
                   <el-tag v-if="currentStrategy.status === 'running'" type="success">{{ t('strategy.running') }}</el-tag>
                   <el-tag v-else-if="currentStrategy.status === 'stopped'" type="info">{{ t('strategy.stopped') }}</el-tag>
+                  <el-tag v-else-if="currentStrategy.status === 'starting'" type="warning" :icon="Loading">正在启动</el-tag>
+                  <el-tag v-else-if="currentStrategy.status === 'stopping'" type="warning" :icon="Loading">正在停止</el-tag>
                   <el-tag v-else type="danger">{{ t('strategy.error') }}</el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item :label="t('strategy.healthScore')">
@@ -463,6 +488,22 @@
           >
             {{ t('strategy.stop') }}
           </el-button>
+          <el-button
+            v-else-if="currentStrategy.status === 'starting'"
+            type="warning"
+            disabled
+            loading
+          >
+            正在启动
+          </el-button>
+          <el-button
+            v-else-if="currentStrategy.status === 'stopping'"
+            type="warning"
+            disabled
+            loading
+          >
+            正在停止
+          </el-button>
         </div>
       </div>
     </el-dialog>
@@ -472,7 +513,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Upload, Document } from '@element-plus/icons-vue'
+import { Plus, Upload, Document, Loading } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useStrategyStore } from '@/stores/strategy'
 import { useUserStore } from '@/stores/user'
@@ -492,6 +533,8 @@ const uploadRef = ref(null)
 const currentStrategy = ref(null)
 let autoSaveTimer = null
 let draftKey = null
+let detailRefreshTimer = null  // 详情页自动刷新定时器
+let statusPollingTimers = {}  // 状态轮询定时器 (strategy_id -> timer)
 
 // 文件上传相关状态
 const uploadedFiles = ref([])
@@ -560,7 +603,8 @@ const beforeUpload = (file) => {
 
 const handleUploadSuccess = (response, file, fileList) => {
   if (response.success) {
-    ElMessage.success(t('strategy.uploadSuccess'))
+    // 显示后端返回的详细消息（包含找到的策略类数量）
+    ElMessage.success(response.message || t('strategy.uploadSuccess'))
 
     // 保存文件信息
     strategyFileInfo.value = {
@@ -614,23 +658,104 @@ const handleSelectionChange = (selection) => {
   selectedStrategies.value = selection
 }
 
+// 状态轮询：等待策略达到目标状态
+const startStatusPolling = (strategyId, targetStatus) => {
+  // 清理之前的定时器
+  if (statusPollingTimers[strategyId]) {
+    clearInterval(statusPollingTimers[strategyId])
+  }
+
+  let pollCount = 0
+  const maxPolls = 60 // 最多轮询60次 (2秒*60 = 120秒)
+
+  statusPollingTimers[strategyId] = setInterval(async () => {
+    pollCount++
+
+    try {
+      const detail = await strategyStore.fetchStrategy(strategyId)
+
+      // 检查是否达到目标状态
+      if (detail.status === targetStatus) {
+        // 清理定时器
+        clearInterval(statusPollingTimers[strategyId])
+        delete statusPollingTimers[strategyId]
+
+        // 刷新列表
+        await fetchData()
+
+        // 显示成功消息
+        if (targetStatus === 'running') {
+          ElMessage.success('策略启动成功')
+        } else if (targetStatus === 'stopped') {
+          ElMessage.success('策略停止成功')
+        }
+      } else if (detail.status === 'stopped' && targetStatus === 'running') {
+        // 启动失败
+        clearInterval(statusPollingTimers[strategyId])
+        delete statusPollingTimers[strategyId]
+        await fetchData()
+        ElMessage.error('策略启动失败')
+      } else if (detail.status === 'running' && targetStatus === 'stopped') {
+        // 停止失败
+        clearInterval(statusPollingTimers[strategyId])
+        delete statusPollingTimers[strategyId]
+        await fetchData()
+        ElMessage.error('策略停止失败')
+      } else if (pollCount >= maxPolls) {
+        // 超时
+        clearInterval(statusPollingTimers[strategyId])
+        delete statusPollingTimers[strategyId]
+        await fetchData()
+        ElMessage.warning('操作超时，请检查策略状态')
+      }
+    } catch (error) {
+      console.error('Status polling error:', error)
+      // 继续轮询，不中断
+    }
+  }, 2000) // 每2秒轮询一次
+}
+
 const handleStart = async (row) => {
   try {
+    // 先更新本地状态为starting
+    const index = strategies.value.findIndex(s => s.id === row.id)
+    if (index !== -1) {
+      strategies.value[index].status = 'starting'
+    }
+
     await strategyStore.startStrategy(row.id)
-    ElMessage.success(t('strategy.startSuccess'))
-    fetchData()
+
+    // 立即刷新获取最新状态
+    await fetchData()
+
+    // 启动轮询检测状态变化
+    startStatusPolling(row.id, 'running')
   } catch (error) {
     ElMessage.error(t('strategy.startFailed'))
+    // 失败时恢复原状态
+    await fetchData()
   }
 }
 
 const handleStop = async (row) => {
   try {
+    // 先更新本地状态为stopping
+    const index = strategies.value.findIndex(s => s.id === row.id)
+    if (index !== -1) {
+      strategies.value[index].status = 'stopping'
+    }
+
     await strategyStore.stopStrategy(row.id)
-    ElMessage.success(t('strategy.stopSuccess'))
-    fetchData()
+
+    // 立即刷新获取最新状态
+    await fetchData()
+
+    // 启动轮询检测状态变化
+    startStatusPolling(row.id, 'stopped')
   } catch (error) {
     ElMessage.error(t('strategy.stopFailed'))
+    // 失败时恢复原状态
+    await fetchData()
   }
 }
 
@@ -639,6 +764,9 @@ const handleView = async (row) => {
     const detail = await strategyStore.fetchStrategy(row.id)
     currentStrategy.value = detail
     showDetailDialog.value = true
+
+    // 如果是正在启动或停止状态，启动自动刷新
+    startDetailRefresh()
   } catch (error) {
     ElMessage.error(t('strategy.detailFailed'))
   }
@@ -734,6 +862,10 @@ const calculateHealthScore = (strategy) => {
     return 0
   } else if (strategy.status === 'error') {
     return 15
+  } else if (strategy.status === 'starting') {
+    return 50  // 正在启动中
+  } else if (strategy.status === 'stopping') {
+    return 40  // 正在停止中
   } else if (strategy.status === 'running') {
     // 运行中基础分数90分
     let score = 90
@@ -764,23 +896,53 @@ const getHealthColor = (score) => {
 
 const handleStartFromDetail = async () => {
   try {
+    // 先更新本地状态为starting
+    if (currentStrategy.value) {
+      currentStrategy.value.status = 'starting'
+      // 立即启动自动刷新
+      startDetailRefresh()
+    }
+
     await handleStart(currentStrategy.value)
+
     // 重新获取详情
     const detail = await strategyStore.fetchStrategy(currentStrategy.value.id)
     currentStrategy.value = detail
   } catch (error) {
     // 错误已在handleStart中处理
+    // 重新获取详情以恢复状态
+    try {
+      const detail = await strategyStore.fetchStrategy(currentStrategy.value.id)
+      currentStrategy.value = detail
+    } catch (e) {
+      // 忽略
+    }
   }
 }
 
 const handleStopFromDetail = async () => {
   try {
+    // 先更新本地状态为stopping
+    if (currentStrategy.value) {
+      currentStrategy.value.status = 'stopping'
+      // 立即启动自动刷新
+      startDetailRefresh()
+    }
+
     await handleStop(currentStrategy.value)
+
     // 重新获取详情
     const detail = await strategyStore.fetchStrategy(currentStrategy.value.id)
     currentStrategy.value = detail
   } catch (error) {
     // 错误已在handleStop中处理
+    // 重新获取详情以恢复状态
+    try {
+      const detail = await strategyStore.fetchStrategy(currentStrategy.value.id)
+      currentStrategy.value = detail
+    } catch (e) {
+      // 忽略
+    }
   }
 }
 
@@ -895,6 +1057,46 @@ const stopAutoSave = () => {
   }
 }
 
+// 详情页自动刷新相关函数
+const refreshStrategyDetail = async () => {
+  if (!currentStrategy.value || !showDetailDialog.value) {
+    return
+  }
+
+  try {
+    const detail = await strategyStore.fetchStrategy(currentStrategy.value.id)
+    currentStrategy.value = detail
+
+    // 如果状态已经稳定（不是starting或stopping），停止刷新
+    if (detail.status !== 'starting' && detail.status !== 'stopping') {
+      stopDetailRefresh()
+      // 同时刷新列表
+      await fetchData()
+    }
+  } catch (error) {
+    console.error('Failed to refresh strategy detail:', error)
+  }
+}
+
+const startDetailRefresh = () => {
+  // 先停止之前的定时器
+  stopDetailRefresh()
+
+  // 如果状态是starting或stopping，启动定时刷新
+  if (currentStrategy.value &&
+      (currentStrategy.value.status === 'starting' || currentStrategy.value.status === 'stopping')) {
+    // 每2秒刷新一次
+    detailRefreshTimer = setInterval(refreshStrategyDetail, 2000)
+  }
+}
+
+const stopDetailRefresh = () => {
+  if (detailRefreshTimer) {
+    clearInterval(detailRefreshTimer)
+    detailRefreshTimer = null
+  }
+}
+
 // 监听对话框关闭，停止自动保存
 watch(showCreateDialog, (newVal) => {
   if (newVal) {
@@ -904,12 +1106,34 @@ watch(showCreateDialog, (newVal) => {
   }
 })
 
+// 监听详情对话框关闭，停止详情刷新
+watch(showDetailDialog, (newVal) => {
+  if (!newVal) {
+    stopDetailRefresh()
+  }
+})
+
+// 监听当前策略状态变化，启动或停止刷新
+watch(() => currentStrategy.value?.status, (newStatus) => {
+  if (newStatus === 'starting' || newStatus === 'stopping') {
+    startDetailRefresh()
+  }
+})
+
 onMounted(() => {
   fetchData()
 })
 
 onUnmounted(() => {
   stopAutoSave()
+  stopDetailRefresh()
+  // 清理所有状态轮询定时器
+  Object.keys(statusPollingTimers).forEach(strategyId => {
+    if (statusPollingTimers[strategyId]) {
+      clearInterval(statusPollingTimers[strategyId])
+    }
+  })
+  statusPollingTimers = {}
 })
 </script>
 
