@@ -11,10 +11,11 @@ import time
 from config import settings
 from database.session import engine, Base, get_db, SessionLocal
 from api.v1 import system, strategies, signals, auth, monitoring, notifications, websocket, proxies, settings as settings_api
-from api.v1 import market, config as config_api, health
+from api.v1 import market, config as config_api, health, notify, realtime, heartbeat
 from core.freqtrade_manager import FreqTradeGatewayManager
 from services.monitoring_service import MonitoringService
 from services.notification_service import NotificationService
+from services.notifyhub.core import notify_hub
 from app.websocket.monitoring_broadcaster import MonitoringBroadcaster
 from app.websocket.manager import manager as ws_manager
 from core.redis_client import redis_client
@@ -25,6 +26,11 @@ from services.exchange_failover_manager import ExchangeFailoverManager
 from services.rate_limit_handler import RateLimitHandler
 from services.market_data_scheduler import MarketDataScheduler
 from services.system_config_service import SystemConfigService
+from services.log_monitor_service import LogMonitorService
+import services.log_monitor_service as log_monitor_module
+from services.heartbeat_monitor_service import StrategyHeartbeatMonitor
+import services.heartbeat_monitor_service as heartbeat_monitor_module
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +48,8 @@ ccxt_manager: CCXTManager = None
 exchange_failover_manager: ExchangeFailoverManager = None
 rate_limit_handler: RateLimitHandler = None
 market_data_scheduler: MarketDataScheduler = None
+log_monitor_service_instance: LogMonitorService = None
+heartbeat_monitor_instance: StrategyHeartbeatMonitor = None
 
 
 @asynccontextmanager
@@ -71,6 +79,39 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize FreqTrade manager: {e}")
 
+    # Initialize Log Monitor Service
+    global log_monitor_service_instance
+    try:
+        if freqtrade_manager:
+            logs_path = freqtrade_manager.logs_path
+            log_monitor_service_instance = LogMonitorService(logs_path)
+            log_monitor_service_instance.start()
+            # 将服务注入到log_monitor_service模块
+            log_monitor_module.log_monitor_service = log_monitor_service_instance
+            logger.info(f"✅ Log Monitor Service initialized (watching: {logs_path})")
+        else:
+            logger.warning("Log Monitor Service not initialized (FreqTrade manager unavailable)")
+    except Exception as e:
+        logger.error(f"Failed to initialize Log Monitor Service: {e}", exc_info=True)
+
+    # Initialize Heartbeat Monitor Service
+    global heartbeat_monitor_instance
+    try:
+        if freqtrade_manager:
+            heartbeat_monitor_instance = StrategyHeartbeatMonitor(
+                strategy_manager=freqtrade_manager,
+                notify_hub=notify_hub,
+                check_interval=30  # 30秒检查一次
+            )
+            await heartbeat_monitor_instance.start()
+            # 将服务注入到heartbeat_monitor_service模块
+            heartbeat_monitor_module.heartbeat_monitor = heartbeat_monitor_instance
+            logger.info("✅ Heartbeat Monitor Service initialized")
+        else:
+            logger.warning("Heartbeat Monitor Service not initialized (FreqTrade manager unavailable)")
+    except Exception as e:
+        logger.error(f"Failed to initialize Heartbeat Monitor Service: {e}", exc_info=True)
+
     # Strategy Recovery - 智能恢复运行中的策略
     if settings.AUTO_RECOVER_STRATEGIES and freqtrade_manager:
         try:
@@ -82,7 +123,26 @@ async def lifespan(app: FastAPI):
             logger.info("Starting Strategy Recovery (AUTO_RECOVER_STRATEGIES=True)")
             logger.info("="*60)
 
-            # 尝试恢复策略
+            # ⭐ 步骤1: 同步实际运行的进程状态（自动恢复机制）
+            logger.info("Phase 1: Synchronizing actual process status with database...")
+            sync_results = await freqtrade_manager.sync_strategy_status(db)
+
+            # 记录同步结果
+            if sync_results["scanned_processes"] > 0:
+                logger.info("📊 Status Synchronization Results:")
+                logger.info(f"   🔍 Scanned processes: {sync_results['scanned_processes']}")
+                logger.info(f"   🔄 Registered orphans: {sync_results['registered_orphans']}")
+                logger.info(f"   🧟 Killed zombies: {sync_results['killed_zombies']}")
+                logger.info(f"   ✅ Synced to running: {sync_results['synced_to_running']}")
+                logger.info(f"   ⏸️  Synced to stopped: {sync_results['synced_to_stopped']}")
+
+                if sync_results["errors"]:
+                    logger.warning(f"   ⚠️  Errors: {len(sync_results['errors'])}")
+                    for error in sync_results["errors"][:3]:  # Show first 3 errors
+                        logger.warning(f"      - {error}")
+
+            # ⭐ 步骤2: 恢复数据库中标记为 running 但实际未运行的策略
+            logger.info("\nPhase 2: Recovering strategies marked as 'running' in database...")
             recovery_results = await freqtrade_manager.recover_running_strategies(
                 db,
                 max_retries=settings.MAX_RECOVERY_RETRIES
@@ -105,6 +165,16 @@ async def lifespan(app: FastAPI):
                 logger.info("✅ No strategies needed recovery")
 
             logger.info("="*60)
+
+            # 启动日志监控for已恢复的运行中策略
+            if log_monitor_service_instance and recovery_results.get('recovered', 0) > 0:
+                logger.info("Starting log monitoring for recovered strategies...")
+                for detail in recovery_results.get('details', []):
+                    if detail['status'] == 'recovered':
+                        strategy_id = detail['strategy_id']
+                        await log_monitor_service_instance.start_monitoring_strategy(strategy_id)
+                        logger.info(f"  ✅ Started monitoring strategy {strategy_id}")
+                logger.info("Log monitoring setup complete for recovered strategies")
 
             # 关闭数据库session
             try:
@@ -138,6 +208,51 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to reset strategy statuses: {e}", exc_info=True)
 
+    # 扫描所有正在运行的策略并启动日志监控和心跳监控
+    if (log_monitor_service_instance or heartbeat_monitor_instance) and freqtrade_manager:
+        try:
+            logger.info("Scanning for running strategies to monitor logs and heartbeats...")
+            db_gen = get_db()
+            db = await db_gen.__anext__()
+
+            # 查询所有运行中的策略
+            from sqlalchemy import select
+            from models.strategy import Strategy
+            result = await db.execute(
+                select(Strategy).where(Strategy.status == 'running')
+            )
+            running_strategies = result.scalars().all()
+
+            if running_strategies:
+                logger.info(f"Found {len(running_strategies)} running strategies")
+                for strategy in running_strategies:
+                    # 启动日志监控
+                    if log_monitor_service_instance:
+                        await log_monitor_service_instance.start_monitoring_strategy(strategy.id)
+                        logger.info(f"  ✅ Started log monitoring for strategy {strategy.id} ({strategy.name})")
+
+                    # 注册心跳监控
+                    if heartbeat_monitor_instance:
+                        log_file_path = str(freqtrade_manager.logs_path / f"strategy_{strategy.id}.log")
+                        await heartbeat_monitor_instance.register_strategy(
+                            strategy_id=strategy.id,
+                            log_file_path=log_file_path
+                        )
+                        logger.info(f"  ✅ Registered heartbeat monitoring for strategy {strategy.id} ({strategy.name})")
+
+                logger.info("Log and heartbeat monitoring setup complete")
+            else:
+                logger.info("No running strategies found to monitor")
+
+            # 关闭数据库session
+            try:
+                await db_gen.aclose()
+            except:
+                pass
+
+        except Exception as e:
+            logger.error(f"Failed to scan and monitor running strategies: {e}", exc_info=True)
+
     # Initialize monitoring service
     try:
         monitoring_service = MonitoringService(freqtrade_manager)
@@ -157,6 +272,15 @@ async def lifespan(app: FastAPI):
         logger.info("Notification service initialized")
     except Exception as e:
         logger.error(f"Failed to initialize notification service: {e}")
+
+    # Initialize NotifyHub
+    try:
+        await notify_hub.start()
+        # 将服务注入到notify模块
+        notify._notify_hub = notify_hub
+        logger.info("✅ NotifyHub initialized and started")
+    except Exception as e:
+        logger.error(f"Failed to initialize NotifyHub: {e}")
 
     # Initialize monitoring broadcaster
     try:
@@ -317,6 +441,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to stop notification service: {e}")
 
+    # Stop NotifyHub
+    try:
+        await notify_hub.stop()
+        logger.info("✅ NotifyHub stopped")
+    except Exception as e:
+        logger.error(f"Failed to stop NotifyHub: {e}")
+
     # Stop all running strategies
     if freqtrade_manager:
         try:
@@ -439,6 +570,13 @@ app.include_router(
     tags=["signals"]
 )
 
+# Register config router first to match specific routes before catch-all
+app.include_router(
+    config_api.router,
+    prefix="/api/v1/system",
+    tags=["config"]
+)
+
 app.include_router(
     system.router,
     prefix="/api/v1/system",
@@ -455,6 +593,12 @@ app.include_router(
     notifications.router,
     prefix="/api/v1/notifications",
     tags=["notifications"]
+)
+
+app.include_router(
+    notify.router,
+    prefix="/api/v1/notify",
+    tags=["notify"]
 )
 
 app.include_router(
@@ -482,15 +626,21 @@ app.include_router(
 )
 
 app.include_router(
-    config_api.router,
-    prefix="/api/v1/system",
-    tags=["config"]
-)
-
-app.include_router(
     health.router,
     prefix="/api/v1",
     tags=["health"]
+)
+
+app.include_router(
+    realtime.router,
+    prefix="/api/v1/realtime",
+    tags=["realtime"]
+)
+
+app.include_router(
+    heartbeat.router,
+    prefix="/api/v1",
+    tags=["heartbeat"]
 )
 
 

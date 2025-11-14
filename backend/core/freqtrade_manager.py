@@ -51,6 +51,9 @@ class FreqTradeGatewayManager:
         try:
             logger.info(f"Creating strategy {strategy_id}: {strategy_config.get('name', 'Unknown')}")
 
+            # 0. ⭐ 清理该策略的所有旧进程（防止重复进程）
+            await self._cleanup_old_strategy_processes(strategy_id)
+
             # 1. 分配端口
             port = await self._allocate_port(strategy_id)
             logger.info(f"Allocated port {port} for strategy {strategy_id}")
@@ -63,8 +66,8 @@ class FreqTradeGatewayManager:
             process = await self._start_freqtrade_process(config_file, strategy_id)
             logger.info(f"Started FreqTrade process for strategy {strategy_id} (PID: {process.pid})")
 
-            # 4. 等待API就绪
-            await self._wait_for_api_ready(port)
+            # 4. 等待API就绪（传入process对象以检查进程存活性）
+            await self._wait_for_api_ready(port, process)
             logger.info(f"FreqTrade API ready for strategy {strategy_id}")
 
             # 5. 保存进程和端口信息
@@ -134,6 +137,86 @@ class FreqTradeGatewayManager:
 
         return results
 
+    async def restart_strategy(self, strategy_id: int, db=None) -> bool:
+        """重启指定策略"""
+        try:
+            logger.info(f"Restarting strategy {strategy_id}")
+
+            # 1. 检查策略是否在运行
+            if strategy_id not in self.strategy_processes:
+                logger.warning(f"Strategy {strategy_id} is not running, cannot restart")
+                return False
+
+            # 2. 保存策略配置（需要从数据库读取）
+            if db is None:
+                from database.session import SessionLocal
+                async with SessionLocal() as session:
+                    from models.strategy import Strategy
+                    from sqlalchemy import select
+                    result = await session.execute(
+                        select(Strategy).where(Strategy.id == strategy_id)
+                    )
+                    strategy = result.scalar_one_or_none()
+                    if not strategy:
+                        logger.error(f"Strategy {strategy_id} not found in database")
+                        return False
+
+                    strategy_config = {
+                        "id": strategy.id,
+                        "name": strategy.name,
+                        "strategy_class": strategy.strategy_class,
+                        "exchange": strategy.exchange,
+                        "timeframe": strategy.timeframe,
+                        "pair_whitelist": strategy.pair_whitelist,
+                        "dry_run": strategy.dry_run,
+                        "stake_amount": strategy.stake_amount,
+                        "proxy_id": strategy.proxy_id
+                    }
+            else:
+                from models.strategy import Strategy
+                from sqlalchemy import select
+                result = await db.execute(
+                    select(Strategy).where(Strategy.id == strategy_id)
+                )
+                strategy = result.scalar_one_or_none()
+                if not strategy:
+                    logger.error(f"Strategy {strategy_id} not found in database")
+                    return False
+
+                strategy_config = {
+                    "id": strategy.id,
+                    "name": strategy.name,
+                    "strategy_class": strategy.strategy_class,
+                    "exchange": strategy.exchange,
+                    "timeframe": strategy.timeframe,
+                    "pair_whitelist": strategy.pair_whitelist,
+                    "dry_run": strategy.dry_run,
+                    "stake_amount": strategy.stake_amount,
+                    "proxy_id": strategy.proxy_id
+                }
+
+            # 3. 停止策略
+            stop_success = await self.stop_strategy(strategy_id)
+            if not stop_success:
+                logger.error(f"Failed to stop strategy {strategy_id} before restart")
+                return False
+
+            # 4. 等待一小段时间，确保资源完全释放
+            await asyncio.sleep(2)
+
+            # 5. 重新启动策略
+            start_success = await self.create_strategy(strategy_config, db)
+            if not start_success:
+                logger.error(f"Failed to start strategy {strategy_id} after restart")
+                return False
+
+            logger.info(f"Strategy {strategy_id} restarted successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to restart strategy {strategy_id}: {e}", exc_info=True)
+            return False
+
     def get_port_pool_status(self) -> dict:
         """获取端口池状态"""
         return {
@@ -161,13 +244,20 @@ class FreqTradeGatewayManager:
         }
 
     async def check_strategy_health(self, strategy_id: int) -> dict:
-        """检查单个策略的健康状态"""
+        """
+        检查单个策略的健康状态
+
+        验证：
+        1. 进程是否存活
+        2. API是否响应
+        3. 端口是否由正确的进程监听
+        """
         if strategy_id not in self.strategy_processes:
             return {
                 "strategy_id": strategy_id,
                 "status": "not_found",
                 "healthy": False,
-                "message": "Strategy process not found"
+                "message": "Strategy process not found in manager"
             }
 
         process = self.strategy_processes[strategy_id]
@@ -176,28 +266,48 @@ class FreqTradeGatewayManager:
         # 1. 检查进程是否运行
         process_running = process.poll() is None
         if not process_running:
+            logger.warning(f"Strategy {strategy_id} process is dead (exit code: {process.returncode})")
             return {
                 "strategy_id": strategy_id,
                 "status": "process_dead",
                 "healthy": False,
                 "message": f"Process exited with code {process.returncode}",
-                "port": port
+                "port": port,
+                "exit_code": process.returncode
             }
 
         # 2. 检查API是否响应
         if port:
             api_healthy = await self._check_api_health(port)
             if not api_healthy:
+                logger.warning(f"Strategy {strategy_id} API not responding on port {port}")
                 return {
                     "strategy_id": strategy_id,
                     "status": "api_unhealthy",
                     "healthy": False,
-                    "message": "FreqTrade API not responding",
+                    "message": f"FreqTrade API not responding on port {port}",
                     "port": port,
                     "process_id": process.pid
                 }
 
-        # 3. 获取进程资源使用情况
+            # 3. ⭐ 新增：验证端口是否由正确的进程监听
+            port_owner = self._check_port_owner(port)
+            if port_owner and port_owner != process.pid:
+                logger.error(
+                    f"Strategy {strategy_id} port conflict: "
+                    f"port {port} is owned by process {port_owner}, not {process.pid}"
+                )
+                return {
+                    "strategy_id": strategy_id,
+                    "status": "port_conflict",
+                    "healthy": False,
+                    "message": f"Port {port} is owned by another process (PID: {port_owner})",
+                    "port": port,
+                    "expected_pid": process.pid,
+                    "actual_pid": port_owner
+                }
+
+        # 4. 获取进程资源使用情况
         try:
             proc = psutil.Process(process.pid)
             cpu_percent = proc.cpu_percent(interval=1)
@@ -213,14 +323,33 @@ class FreqTradeGatewayManager:
                 "memory_mb": round(memory_mb, 2),
                 "num_threads": proc.num_threads()
             }
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            logger.error(f"Cannot access process {process.pid} info: {e}")
             return {
                 "strategy_id": strategy_id,
                 "status": "process_inaccessible",
                 "healthy": False,
-                "message": "Cannot access process information",
+                "message": f"Cannot access process information: {e}",
                 "port": port
             }
+
+    def _check_port_owner(self, port: int) -> Optional[int]:
+        """
+        检查端口的所有者进程ID
+
+        Returns:
+            int: 进程ID，如果端口未被占用则返回None
+        """
+        try:
+            import socket
+            # 尝试通过psutil查找监听该端口的进程
+            for conn in psutil.net_connections(kind='inet'):
+                if conn.status == 'LISTEN' and conn.laddr.port == port:
+                    return conn.pid
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to check port {port} owner: {e}")
+            return None
 
     async def check_all_strategies_health(self) -> dict:
         """检查所有策略的健康状态"""
@@ -399,12 +528,57 @@ class FreqTradeGatewayManager:
 
         return process
 
-    async def _wait_for_api_ready(self, port: int, timeout: int = 60):
-        """等待FreqTrade API就绪"""
+    async def _wait_for_api_ready(self, port: int, process: subprocess.Popen, timeout: int = 30):
+        """
+        等待FreqTrade API就绪
+
+        Args:
+            port: API端口
+            process: FreqTrade进程对象
+            timeout: 超时时间（秒），默认30秒
+
+        Raises:
+            Exception: 如果进程退出或API超时未响应
+        """
         start_time = asyncio.get_event_loop().time()
         api_url = f"http://127.0.0.1:{port}"
 
         while (asyncio.get_event_loop().time() - start_time) < timeout:
+            # 1️⃣ 首先检查进程是否还存活
+            if process.poll() is not None:
+                # 进程已退出
+                exit_code = process.returncode
+
+                # 读取stderr获取错误信息
+                stderr_output = ""
+                try:
+                    if process.stderr:
+                        stderr_output = process.stderr.read().decode('utf-8', errors='ignore')
+                except Exception as e:
+                    logger.warning(f"Failed to read stderr: {e}")
+
+                # 提取关键错误信息
+                error_summary = "Unknown error"
+                if stderr_output:
+                    # 提取最后几行重要错误
+                    lines = stderr_output.strip().split('\n')
+                    error_lines = [line for line in lines[-10:] if 'error' in line.lower() or 'exception' in line.lower()]
+                    if error_lines:
+                        error_summary = '\n'.join(error_lines[-3:])  # 最后3行错误
+                    else:
+                        error_summary = '\n'.join(lines[-3:])  # 最后3行输出
+
+                logger.error(
+                    f"FreqTrade process (port {port}) exited unexpectedly with code {exit_code}. "
+                    f"Error: {error_summary[:500]}"
+                )
+
+                raise Exception(
+                    f"FreqTrade process exited unexpectedly with code {exit_code}. "
+                    f"Error: {error_summary[:500]}"
+                )
+
+            # 2️⃣ 检查API是否响应
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
@@ -412,13 +586,31 @@ class FreqTradeGatewayManager:
                         timeout=aiohttp.ClientTimeout(total=5)
                     ) as response:
                         if response.status == 200:
+                            logger.info(f"✅ FreqTrade API on port {port} is ready (PID: {process.pid})")
                             return True
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"API not ready yet (port {port}): {e}")
 
+            # 3️⃣ 等待2秒后重试
             await asyncio.sleep(2)
 
-        raise Exception(f"FreqTrade API on port {port} failed to start within {timeout}s")
+        # 4️⃣ 超时检查：最后再检查一次进程状态
+        if process.poll() is not None:
+            exit_code = process.returncode
+            raise Exception(
+                f"FreqTrade process exited during startup with code {exit_code}. "
+                f"Check logs at {self.logs_path}/strategy_*.log"
+            )
+
+        # 5️⃣ 进程存活但API不响应
+        logger.error(
+            f"FreqTrade API on port {port} failed to start within {timeout}s. "
+            f"Process is still running (PID: {process.pid}) but API is not responding."
+        )
+        raise Exception(
+            f"FreqTrade API on port {port} failed to start within {timeout}s. "
+            f"Process is still running (PID: {process.pid}) but API is not responding."
+        )
 
     async def _update_gateway_routes(self):
         """更新API Gateway路由配置"""
@@ -579,6 +771,19 @@ class FreqTradeGatewayManager:
             # 2. 逐个尝试恢复策略
             for strategy in running_strategies:
                 strategy_id = strategy.id
+
+                # ⭐ 跳过已经在 manager 中运行的策略（通过同步阶段注册的）
+                if strategy_id in self.strategy_processes:
+                    logger.info(f"Strategy {strategy_id} already running in manager (registered by sync), skipping recovery")
+                    results["recovered"] += 1
+                    results["details"].append({
+                        "strategy_id": strategy_id,
+                        "name": strategy.name,
+                        "status": "already_running",
+                        "retries": 0
+                    })
+                    continue
+
                 logger.info(f"Attempting to recover strategy {strategy_id}: {strategy.name}")
 
                 retry_count = 0
@@ -692,3 +897,426 @@ class FreqTradeGatewayManager:
             logger.error(f"Failed to reset strategy statuses: {e}", exc_info=True)
             await db.rollback()
             return 0
+
+    def scan_freqtrade_processes(self) -> List[Dict]:
+        """
+        扫描系统中所有运行的 FreqTrade 进程
+
+        Returns:
+            List[Dict]: 进程信息列表，每个元素包含:
+                - pid: 进程ID
+                - strategy_id: 策略ID（从配置文件路径提取）
+                - config_file: 配置文件路径
+                - log_file: 日志文件路径
+                - port: API端口（如果正在监听）
+                - is_healthy: 是否健康（有API端口）
+        """
+        processes = []
+
+        try:
+            # 遍历所有进程，查找 freqtrade 进程
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    cmdline = proc.info.get('cmdline', [])
+                    if not cmdline:
+                        continue
+
+                    # 检查是否是 freqtrade trade 命令
+                    if 'freqtrade' in ' '.join(cmdline) and 'trade' in cmdline:
+                        # 提取配置文件路径
+                        config_file = None
+                        log_file = None
+
+                        for i, arg in enumerate(cmdline):
+                            if arg == '--config' and i + 1 < len(cmdline):
+                                config_file = cmdline[i + 1]
+                            elif arg == '--logfile' and i + 1 < len(cmdline):
+                                log_file = cmdline[i + 1]
+
+                        if not config_file:
+                            continue
+
+                        # 从配置文件路径提取策略ID
+                        # 格式: /path/to/freqtrade_configs/strategy_10.json
+                        import re
+                        match = re.search(r'strategy_(\d+)\.json', config_file)
+                        if not match:
+                            continue
+
+                        strategy_id = int(match.group(1))
+
+                        # 检查进程是否监听端口
+                        port = None
+                        is_healthy = False
+
+                        try:
+                            # 查找该进程监听的端口
+                            connections = proc.connections(kind='inet')
+                            for conn in connections:
+                                if conn.status == 'LISTEN' and conn.laddr.ip == '127.0.0.1':
+                                    port = conn.laddr.port
+                                    is_healthy = True
+                                    break
+                        except (psutil.AccessDenied, psutil.NoSuchProcess):
+                            pass
+
+                        processes.append({
+                            'pid': proc.info['pid'],
+                            'strategy_id': strategy_id,
+                            'config_file': config_file,
+                            'log_file': log_file,
+                            'port': port,
+                            'is_healthy': is_healthy
+                        })
+
+                        logger.debug(f"Found FreqTrade process: PID={proc.info['pid']}, "
+                                   f"Strategy={strategy_id}, Port={port}, Healthy={is_healthy}")
+
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+
+            logger.info(f"Scanned system: found {len(processes)} FreqTrade processes")
+            return processes
+
+        except Exception as e:
+            logger.error(f"Error scanning FreqTrade processes: {e}", exc_info=True)
+            return []
+
+    async def sync_strategy_status(self, db) -> dict:
+        """
+        同步数据库状态与实际运行的进程状态
+
+        这个方法会：
+        1. 扫描所有实际运行的 FreqTrade 进程
+        2. 对比数据库中的状态
+        3. 清理僵尸进程（运行但没有API端口）
+        4. 更新数据库状态以匹配实际情况
+        5. 将健康的孤儿进程注册到 manager
+
+        Args:
+            db: 数据库session
+
+        Returns:
+            dict: 同步结果统计
+        """
+        from sqlalchemy import select, update
+        from models.strategy import Strategy
+
+        logger.info("="*60)
+        logger.info("Starting automatic strategy status synchronization...")
+        logger.info("="*60)
+
+        results = {
+            "scanned_processes": 0,
+            "orphan_processes": 0,
+            "zombie_processes": 0,
+            "synced_to_running": 0,
+            "synced_to_stopped": 0,
+            "registered_orphans": 0,
+            "killed_zombies": 0,
+            "errors": [],
+            "details": []
+        }
+
+        try:
+            # 1. 扫描所有 FreqTrade 进程
+            running_processes = self.scan_freqtrade_processes()
+            results["scanned_processes"] = len(running_processes)
+            logger.info(f"Found {len(running_processes)} FreqTrade processes running on system")
+
+            # 2. 查询数据库中所有策略
+            stmt = select(Strategy)
+            result = await db.execute(stmt)
+            all_strategies = {s.id: s for s in result.scalars().all()}
+            logger.info(f"Found {len(all_strategies)} strategies in database")
+
+            # 3. 分析每个运行中的进程
+            process_map = {p['strategy_id']: p for p in running_processes}
+
+            for proc_info in running_processes:
+                strategy_id = proc_info['strategy_id']
+                pid = proc_info['pid']
+                port = proc_info['port']
+                is_healthy = proc_info['is_healthy']
+
+                # 检查是否是孤儿进程（数据库显示stopped或error但实际在运行）
+                db_strategy = all_strategies.get(strategy_id)
+                if not db_strategy:
+                    logger.warning(f"Process PID={pid} for strategy {strategy_id} found, "
+                                 f"but strategy not in database")
+                    results["errors"].append(f"Strategy {strategy_id} not found in database")
+                    continue
+
+                is_orphan = db_strategy.status in ['stopped', 'error']
+
+                # 3a. 处理僵尸进程（运行但没有API端口）
+                if not is_healthy:
+                    logger.warning(f"🧟 Zombie process detected: Strategy {strategy_id}, PID={pid}, "
+                                 f"no API port listening")
+                    results["zombie_processes"] += 1
+
+                    try:
+                        # 杀死僵尸进程
+                        proc = psutil.Process(pid)
+                        proc.terminate()
+                        proc.wait(timeout=10)
+                        logger.info(f"✅ Killed zombie process PID={pid} for strategy {strategy_id}")
+                        results["killed_zombies"] += 1
+                        results["details"].append({
+                            "strategy_id": strategy_id,
+                            "action": "killed_zombie",
+                            "pid": pid,
+                            "reason": "No API port listening"
+                        })
+                    except Exception as e:
+                        logger.error(f"Failed to kill zombie process PID={pid}: {e}")
+                        results["errors"].append(f"Failed to kill zombie PID={pid}: {e}")
+
+                    continue
+
+                # 3b. 处理孤儿进程（健康但数据库显示stopped）
+                if is_orphan:
+                    logger.info(f"🔍 Orphan process detected: Strategy {strategy_id}, "
+                              f"PID={pid}, Port={port}, DB status='{db_strategy.status}'")
+                    results["orphan_processes"] += 1
+
+                    # 验证API是否真的可用
+                    api_ok = await self._check_api_health(port)
+                    if api_ok:
+                        # 注册到 manager
+                        try:
+                            # 创建 Popen 对象的替代品（因为我们没有实际的Popen对象）
+                            # 我们需要修改 manager 的数据结构来存储这些信息
+                            class ExternalProcess:
+                                def __init__(self, pid):
+                                    self.pid = pid
+                                    self._proc = psutil.Process(pid)
+
+                                def poll(self):
+                                    try:
+                                        if self._proc.is_running():
+                                            return None  # Still running
+                                        return self._proc.returncode if hasattr(self._proc, 'returncode') else 0
+                                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                        return -1  # Process dead
+
+                            # 注册到 manager
+                            self.strategy_processes[strategy_id] = ExternalProcess(pid)
+                            self.strategy_ports[strategy_id] = port
+
+                            # 从端口池中移除该端口
+                            if port in self.port_pool:
+                                self.port_pool.remove(port)
+
+                            # 更新数据库状态
+                            stmt = update(Strategy).where(
+                                Strategy.id == strategy_id
+                            ).values(
+                                status='running',
+                                process_id=pid,
+                                port=port
+                            )
+                            await db.execute(stmt)
+                            await db.commit()
+
+                            logger.info(f"✅ Registered orphan process: Strategy {strategy_id}, "
+                                      f"PID={pid}, Port={port}")
+                            results["registered_orphans"] += 1
+                            results["synced_to_running"] += 1
+                            results["details"].append({
+                                "strategy_id": strategy_id,
+                                "action": "registered_orphan",
+                                "pid": pid,
+                                "port": port,
+                                "old_status": "stopped",
+                                "new_status": "running"
+                            })
+
+                        except Exception as e:
+                            logger.error(f"Failed to register orphan process {strategy_id}: {e}")
+                            results["errors"].append(f"Failed to register orphan {strategy_id}: {e}")
+                    else:
+                        logger.warning(f"Orphan process {strategy_id} has port but API unhealthy, "
+                                     f"treating as zombie")
+                        results["zombie_processes"] += 1
+                        # 杀死不健康的孤儿进程
+                        try:
+                            proc = psutil.Process(pid)
+                            proc.terminate()
+                            proc.wait(timeout=10)
+                            logger.info(f"✅ Killed unhealthy orphan process PID={pid}")
+                            results["killed_zombies"] += 1
+                        except Exception as e:
+                            logger.error(f"Failed to kill unhealthy process PID={pid}: {e}")
+
+                # 3c. 进程健康且数据库状态为 running - 需要注册到 manager
+                elif db_strategy.status == 'running':
+                    # 检查是否需要注册到 manager（PID不匹配说明是孤儿进程）
+                    pid_mismatch = db_strategy.process_id != pid
+                    port_mismatch = db_strategy.port != port
+                    needs_registration = strategy_id not in self.strategy_processes
+
+                    if pid_mismatch or port_mismatch or needs_registration:
+                        logger.info(f"Re-registering running strategy {strategy_id}: "
+                                  f"PID {db_strategy.process_id}->{pid}, "
+                                  f"Port {db_strategy.port}->{port}, "
+                                  f"In manager: {not needs_registration}")
+
+                        # 注册到 manager（如果还没有）
+                        if needs_registration:
+                            class ExternalProcess:
+                                def __init__(self, pid):
+                                    self.pid = pid
+                                    self._proc = psutil.Process(pid)
+
+                                def poll(self):
+                                    try:
+                                        if self._proc.is_running():
+                                            return None  # Still running
+                                        return self._proc.returncode if hasattr(self._proc, 'returncode') else 0
+                                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                        return -1  # Process dead
+
+                            self.strategy_processes[strategy_id] = ExternalProcess(pid)
+                            self.strategy_ports[strategy_id] = port
+
+                            # 从端口池中移除该端口
+                            if port in self.port_pool:
+                                self.port_pool.remove(port)
+
+                            logger.info(f"✅ Registered running strategy {strategy_id} to manager")
+
+                        # 更新数据库元数据
+                        stmt = update(Strategy).where(
+                            Strategy.id == strategy_id
+                        ).values(
+                            process_id=pid,
+                            port=port
+                        )
+                        await db.execute(stmt)
+                        await db.commit()
+
+                        results["details"].append({
+                            "strategy_id": strategy_id,
+                            "action": "re_registered_running",
+                            "old_pid": db_strategy.process_id,
+                            "new_pid": pid,
+                            "old_port": db_strategy.port,
+                            "new_port": port
+                        })
+
+            # 4. 检查数据库中标记为running但实际未运行的策略
+            for strategy_id, strategy in all_strategies.items():
+                if strategy.status == 'running' and strategy_id not in process_map:
+                    logger.warning(f"Strategy {strategy_id} marked as 'running' in DB but no process found")
+
+                    # 重置为stopped
+                    stmt = update(Strategy).where(
+                        Strategy.id == strategy_id
+                    ).values(status='stopped')
+                    await db.execute(stmt)
+                    await db.commit()
+
+                    # 从 manager 中清理
+                    if strategy_id in self.strategy_processes:
+                        del self.strategy_processes[strategy_id]
+                    if strategy_id in self.strategy_ports:
+                        port = self.strategy_ports[strategy_id]
+                        self.port_pool.add(port)
+                        del self.strategy_ports[strategy_id]
+
+                    logger.info(f"✅ Reset strategy {strategy_id} status to 'stopped'")
+                    results["synced_to_stopped"] += 1
+                    results["details"].append({
+                        "strategy_id": strategy_id,
+                        "action": "synced_to_stopped",
+                        "reason": "No running process found"
+                    })
+
+            # 5. 输出同步摘要
+            logger.info("="*60)
+            logger.info("Strategy Status Synchronization Summary:")
+            logger.info(f"  Scanned processes: {results['scanned_processes']}")
+            logger.info(f"  Orphan processes found: {results['orphan_processes']}")
+            logger.info(f"  Zombie processes found: {results['zombie_processes']}")
+            logger.info(f"  Registered orphans: {results['registered_orphans']}")
+            logger.info(f"  Killed zombies: {results['killed_zombies']}")
+            logger.info(f"  Synced to running: {results['synced_to_running']}")
+            logger.info(f"  Synced to stopped: {results['synced_to_stopped']}")
+            logger.info(f"  Errors: {len(results['errors'])}")
+            logger.info("="*60)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Critical error during status synchronization: {e}", exc_info=True)
+            results["errors"].append(f"Critical error: {e}")
+            return results
+
+    async def _cleanup_old_strategy_processes(self, strategy_id: int):
+        """
+        清理指定策略的所有旧进程
+
+        这个方法在启动新策略前调用，确保不会有重复进程
+
+        Args:
+            strategy_id: 策略ID
+        """
+        try:
+            # 1. 从 manager 中清理（如果存在）
+            if strategy_id in self.strategy_processes:
+                logger.info(f"Cleaning up strategy {strategy_id} from manager")
+                old_process = self.strategy_processes[strategy_id]
+
+                # 尝试优雅停止
+                try:
+                    if old_process.poll() is None:  # Process still running
+                        old_process.terminate()
+                        try:
+                            old_process.wait(timeout=5)
+                        except:
+                            old_process.kill()
+                            old_process.wait()
+                except Exception as e:
+                    logger.warning(f"Error stopping old process from manager: {e}")
+
+                del self.strategy_processes[strategy_id]
+
+            # 2. 释放端口
+            if strategy_id in self.strategy_ports:
+                port = self.strategy_ports[strategy_id]
+                self.port_pool.add(port)
+                logger.info(f"Released port {port} back to pool")
+                del self.strategy_ports[strategy_id]
+
+            # 3. 扫描系统中该策略的所有进程并清理
+            all_processes = self.scan_freqtrade_processes()
+            strategy_processes = [p for p in all_processes if p['strategy_id'] == strategy_id]
+
+            if strategy_processes:
+                logger.warning(f"Found {len(strategy_processes)} orphan processes for strategy {strategy_id}, cleaning up...")
+                for proc_info in strategy_processes:
+                    pid = proc_info['pid']
+                    try:
+                        proc = psutil.Process(pid)
+                        proc.terminate()
+                        proc.wait(timeout=5)
+                        logger.info(f"✅ Killed orphan process PID={pid} for strategy {strategy_id}")
+                    except psutil.TimeoutExpired:
+                        try:
+                            proc.kill()
+                            proc.wait()
+                            logger.info(f"✅ Force killed orphan process PID={pid} for strategy {strategy_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to kill orphan process PID={pid}: {e}")
+                    except psutil.NoSuchProcess:
+                        logger.debug(f"Process PID={pid} already terminated")
+                    except Exception as e:
+                        logger.error(f"Error cleaning up process PID={pid}: {e}")
+
+            logger.info(f"✅ Old processes cleanup completed for strategy {strategy_id}")
+
+        except Exception as e:
+            logger.error(f"Error during old processes cleanup for strategy {strategy_id}: {e}", exc_info=True)
+            # 即使清理失败也继续，不阻止新进程启动
+

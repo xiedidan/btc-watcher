@@ -83,6 +83,7 @@ class RateLimitHandler:
         cache_key = self._build_kline_cache_key(exchange, symbol, timeframe)
 
         # Layer 1: Try Redis cache (if not force refresh)
+        db_data = None
         if not force_refresh:
             cached_data = await self._get_klines_from_redis(cache_key)
             # 检查缓存数据是否充足（至少80%的请求数量）
@@ -95,13 +96,16 @@ class RateLimitHandler:
                     f"got {len(cached_data)} candles, need at least {int(limit * 0.8)}, falling back to database"
                 )
 
-        # Layer 2: Try PostgreSQL database
-        db_data = await self._get_klines_from_database(exchange, symbol, timeframe, limit)
-        if db_data and len(db_data) >= limit * 0.8:  # At least 80% of requested data
-            logger.debug(f"K-line data from database: {exchange} {symbol} {timeframe}")
-            # Cache to Redis
-            await self._cache_klines_to_redis(cache_key, db_data, timeframe)
-            return db_data, DataSource.DATABASE
+            # Layer 2: Try PostgreSQL database (only if not force refresh)
+            db_data = await self._get_klines_from_database(exchange, symbol, timeframe, limit)
+            if db_data and len(db_data) >= limit * 0.8:  # At least 80% of requested data
+                logger.debug(f"K-line data from database: {exchange} {symbol} {timeframe}")
+                # Cache to Redis
+                await self._cache_klines_to_redis(cache_key, db_data, timeframe)
+                return db_data, DataSource.DATABASE
+        else:
+            # If force refresh, still load db_data for fallback in case API fails
+            db_data = await self._get_klines_from_database(exchange, symbol, timeframe, limit)
 
         # Layer 3: Fetch from CCXT API
         try:

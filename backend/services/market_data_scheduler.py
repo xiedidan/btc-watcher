@@ -223,29 +223,15 @@ class MarketDataScheduler:
             True if successful, False otherwise
         """
         try:
-            # Fetch K-line data (using three-layer fallback)
-            # 对于短周期(1m, 5m, 15m)，如果数据不足，强制刷新以获取完整历史数据
+            # Fetch K-line data from API to ensure latest data
+            # 调度器定时更新应该强制从API获取最新数据，而不是使用可能过时的缓存
             klines, source = await self.rate_limit_handler.get_klines(
                 exchange=self.default_exchange,
                 symbol=symbol,
                 timeframe=timeframe,
                 limit=200,
-                force_refresh=False
+                force_refresh=True  # 强制从API刷新以获取最新数据
             )
-
-            # 检查数据量是否充足，如果不足则强制从API刷新
-            if len(klines) < 50 and source != "api":
-                logger.warning(
-                    f"{symbol} {timeframe} has insufficient data ({len(klines)} candles), "
-                    f"forcing refresh from API"
-                )
-                klines, source = await self.rate_limit_handler.get_klines(
-                    exchange=self.default_exchange,
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    limit=200,
-                    force_refresh=True
-                )
 
             logger.debug(
                 f"Updated {symbol} {timeframe} K-lines from {source} "

@@ -1,0 +1,72 @@
+{
+  "strategy": "BBRSIStrategy",
+  "strategy_path": "/home/xd/project/btc-watcher/backend/user_data/strategies",
+  "timeframe": "5m",
+  "dry_run": true,
+  "dry_run_wallet": 10000.0,
+  "stake_currency": "USDT",
+  "stake_amount": 100.0,
+  "max_open_trades": 5,
+  "exchange": {
+    "name": "binance",
+    "key": "",
+    "secret": "",
+    "ccxt_config": {
+      "enableRateLimit": true,
+      "proxies": {
+        "http": "http://127.0.0.1:10810",
+        "https": "http://127.0.0.1:10810"
+      },
+      "aiohttp_proxy": "http://127.0.0.1:10810"
+    },
+    "pair_whitelist": [
+      "BTC/USDT",
+      "ETH/USDT"
+    ],
+    "pair_blacklist": []
+  },
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ],
+  "entry_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1,
+    "price_last_balance": 0.0,
+    "check_depth_of_market": {
+      "enabled": false,
+      "bids_to_ask_delta": 1
+    }
+  },
+  "exit_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1
+  },
+  "api_server": {
+    "enabled": true,
+    "listen_ip_address": "127.0.0.1",
+    "listen_port": 8089,
+    "username": "btc_watcher",
+    "password": "btc-watcher-pass-8",
+    "verbosity": "info",
+    "enable_openapi": true,
+    "jwt_secret_key": "btc-watcher-strategy-8",
+    "CORS_origins": [
+      "http://localhost:8000",
+      "http://localhost:8080"
+    ]
+  },
+  "webhook": {
+    "enabled": true,
+    "url": "http://localhost:8000/api/v1/signals/webhook/8",
+    "format": "json",
+    "strategy_version": "v1.0"
+  },
+  "initial_state": "running",
+  "internals": {
+    "process_throttle_secs": 5
+  }
+}

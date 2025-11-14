@@ -28,18 +28,9 @@ export const useUserStore = defineStore('user', () => {
       localStorage.setItem('token', res.access_token)
       console.log('[UserStore] Login successful, token saved')
 
-      // TODO: WebSocket连接暂时禁用，Alpha测试后再启用
-      // 登录成功后连接WebSocket
-      // const wsStore = useWebSocketStore()
-      // wsStore.connect(res.access_token)
-
-      // 订阅所有主题
-      // setTimeout(() => {
-      //   wsStore.subscribe('monitoring')
-      //   wsStore.subscribe('strategies')
-      //   wsStore.subscribe('signals')
-      //   wsStore.subscribe('capacity')
-      // }, 1000)
+      // 登录成功后连接实时数据（WebSocket优先，自动降级到轮询）
+      const wsStore = useWebSocketStore()
+      await wsStore.connect(res.access_token, 'dashboard')
 
       return true
     } catch (error) {
@@ -50,10 +41,9 @@ export const useUserStore = defineStore('user', () => {
   }
 
   async function logout() {
-    // TODO: WebSocket连接暂时禁用，Alpha测试后再启用
     // 登出前断开WebSocket
-    // const wsStore = useWebSocketStore()
-    // wsStore.disconnect()
+    const wsStore = useWebSocketStore()
+    wsStore.disconnect()
 
     token.value = ''
     user.value = null

@@ -29,6 +29,7 @@ class ConnectionManager:
         self.heartbeat_status: Dict[str, datetime] = {}
 
         # 订阅主题：{topic: Set[client_id]}
+        # 支持动态主题订阅（如 strategy_1_logs, strategy_2_logs 等）
         self.subscriptions: Dict[str, Set[str]] = {
             "monitoring": set(),      # 系统监控
             "strategies": set(),      # 策略状态
@@ -36,6 +37,9 @@ class ConnectionManager:
             "logs": set(),           # 日志流
             "capacity": set(),       # 容量监控
         }
+
+        # 预定义的核心主题（不会被自动清理）
+        self.core_topics = {"monitoring", "strategies", "signals", "logs", "capacity"}
 
         # 心跳超时时间（秒）
         self.heartbeat_timeout = 30
@@ -65,18 +69,37 @@ class ConnectionManager:
         logger.info(f"Client {client_id} disconnected. Total connections: {len(self.active_connections)}")
 
     def subscribe(self, client_id: str, topic: str):
-        """订阅主题"""
-        if topic in self.subscriptions:
-            self.subscriptions[topic].add(client_id)
-            logger.info(f"Client {client_id} subscribed to {topic}")
-        else:
-            logger.warning(f"Topic {topic} does not exist")
+        """
+        订阅主题（支持动态主题）
+
+        Args:
+            client_id: 客户端ID
+            topic: 主题名称（可以是预定义主题或动态主题，如 strategy_1_logs）
+        """
+        # 如果主题不存在，自动创建（支持动态主题）
+        if topic not in self.subscriptions:
+            self.subscriptions[topic] = set()
+            logger.info(f"Created dynamic topic: {topic}")
+
+        self.subscriptions[topic].add(client_id)
+        logger.info(f"Client {client_id} subscribed to {topic}")
 
     def unsubscribe(self, client_id: str, topic: str):
-        """取消订阅"""
+        """
+        取消订阅主题
+
+        Args:
+            client_id: 客户端ID
+            topic: 主题名称
+        """
         if topic in self.subscriptions:
             self.subscriptions[topic].discard(client_id)
             logger.info(f"Client {client_id} unsubscribed from {topic}")
+
+            # 清理空的动态主题（核心主题保留）
+            if topic not in self.core_topics and len(self.subscriptions[topic]) == 0:
+                del self.subscriptions[topic]
+                logger.info(f"Removed empty dynamic topic: {topic}")
 
     async def send_personal_message(self, message: dict, client_id: str):
         """发送个人消息"""

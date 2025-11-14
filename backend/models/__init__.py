@@ -9,6 +9,7 @@ from .user_settings import UserSettings
 from .system_config import SystemConfig
 from .technical_indicator import TechnicalIndicator
 from .kline import Kline
+from .heartbeat import StrategyHeartbeatConfig, StrategyHeartbeatHistory, StrategyRestartHistory
 
 __all__ = [
     "User",
@@ -22,5 +23,8 @@ __all__ = [
     "UserSettings",
     "SystemConfig",
     "TechnicalIndicator",
-    "Kline"
+    "Kline",
+    "StrategyHeartbeatConfig",
+    "StrategyHeartbeatHistory",
+    "StrategyRestartHistory"
 ]

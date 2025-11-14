@@ -3,13 +3,15 @@
  * WebSocket State Management
  *
  * 使用Pinia管理WebSocket连接状态和数据
+ * 支持WebSocket和HTTP轮询双模式
  */
 import { defineStore } from 'pinia'
-import wsClient from '@/utils/websocket'
+import realtimeAdapter from '@/utils/realtimeDataAdapter'
 
 export const useWebSocketStore = defineStore('websocket', {
   state: () => ({
     // 连接状态
+    connectionMode: 'websocket',    // 'websocket' | 'polling'
     isConnected: false,
     reconnectAttempts: 0,
     subscribedTopics: [],
@@ -99,103 +101,82 @@ export const useWebSocketStore = defineStore('websocket', {
 
   actions: {
     /**
-     * 连接WebSocket
+     * 连接实时数据（WebSocket优先，自动降级到轮询）
      * @param {string} token - JWT token
+     * @param {string} page - 页面名称 (dashboard/strategies/signals/monitoring/settings)
      */
-    connect(token) {
+    async connect(token, page = 'dashboard') {
       if (this.isConnected) {
-        console.warn('WebSocket already connected')
+        console.warn('[Store] Already connected')
         return
       }
 
-      // 注册事件监听器
-      this.setupListeners()
+      // 注册适配器回调
+      this.setupAdapterCallbacks()
 
-      // 动态构建WebSocket URL
-      let wsUrl = import.meta.env.VITE_WS_URL
-
-      if (!wsUrl) {
-        // 根据当前页面协议和主机自动构建WebSocket URL
-        // 但是使用当前页面的协议和host（这样会通过Vite dev server的代理）
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const host = window.location.host  // 这会是前端dev server的地址（如localhost:3000）
-        wsUrl = `${protocol}//${host}`
-
-        console.log('🔌 Auto-constructed WebSocket URL:', wsUrl)
-      } else {
-        console.log('🔌 Using configured WebSocket URL:', wsUrl)
+      // 连接适配器（会自动尝试WebSocket，失败则降级到轮询）
+      try {
+        await realtimeAdapter.connect(token, page)
+      } catch (error) {
+        console.error('[Store] Failed to connect:', error)
       }
-
-      console.log('🔌 Connecting to WebSocket:', wsUrl)
-      wsClient.connect(token, wsUrl)
     },
 
     /**
-     * 断开WebSocket连接
+     * 断开连接
      */
     disconnect() {
-      wsClient.disconnect()
+      realtimeAdapter.disconnect()
       this.isConnected = false
       this.subscribedTopics = []
+      this.connectionMode = 'websocket'
     },
 
     /**
-     * 订阅主题
-     * @param {string} topic - 主题名称
+     * 切换页面（更新订阅策略）
+     * @param {string} page - 页面名称
      */
-    subscribe(topic) {
-      wsClient.subscribe(topic)
+    switchPage(page) {
+      realtimeAdapter.switchPage(page)
     },
 
     /**
-     * 取消订阅主题
-     * @param {string} topic - 主题名称
+     * 手动重试WebSocket连接
+     * @param {string} token - JWT token
      */
-    unsubscribe(topic) {
-      wsClient.unsubscribe(topic)
+    async retryWebSocket(token) {
+      try {
+        await realtimeAdapter.retryWebSocket(token)
+      } catch (error) {
+        console.error('[Store] Retry WebSocket failed:', error)
+        throw error
+      }
     },
 
     /**
-     * 设置事件监听器
+     * 设置适配器回调
      */
-    setupListeners() {
-      // 连接打开
-      wsClient.on('open', () => {
-        console.log('[Store] WebSocket connected')
-        this.isConnected = true
-      })
-
-      // 连接关闭
-      wsClient.on('close', () => {
-        console.log('[Store] WebSocket closed')
-        this.isConnected = false
-      })
-
-      // 连接成功
-      wsClient.on('connected', (data) => {
-        console.log('[Store] WebSocket connected to server:', data)
-        this.isConnected = true
-        this.subscribedTopics = data.available_topics || []
-      })
-
+    setupAdapterCallbacks() {
       // 接收数据
-      wsClient.on('data', (message) => {
+      realtimeAdapter.on('data', (message) => {
         this.handleDataMessage(message)
       })
 
-      // 接收事件
-      wsClient.on('event', (message) => {
-        this.handleEventMessage(message)
+      // 连接模式变化
+      realtimeAdapter.on('modeChange', (mode) => {
+        console.log('[Store] Connection mode changed to:', mode)
+        this.connectionMode = mode
+        this.isConnected = (mode === 'websocket') ? realtimeAdapter.isConnected : true
+
+        // 轮询模式也视为已连接
+        if (mode === 'polling') {
+          this.isConnected = true
+        }
       })
 
-      // 接收通知
-      wsClient.on('notification', (message) => {
-        this.handleNotificationMessage(message)
-      })
-
-      // 连接错误
-      wsClient.on('error', (error) => {
-        console.error('[Store] WebSocket error:', error)
+      // 错误处理
+      realtimeAdapter.on('error', (error) => {
+        console.error('[Store] Adapter error:', error)
       })
     },
 
@@ -236,7 +217,13 @@ export const useWebSocketStore = defineStore('websocket', {
           break
 
         default:
-          console.warn('[Store] Unknown data topic:', topic)
+          // 检查是否是动态主题（如 strategy_*_logs）
+          if (topic.startsWith('strategy_') && topic.endsWith('_logs')) {
+            // 动态主题由其他store处理（如strategy store），这里忽略
+            console.debug(`[Store] Ignoring dynamic topic: ${topic}`)
+          } else {
+            console.warn('[Store] Unknown data topic:', topic)
+          }
       }
     },
 
@@ -340,14 +327,15 @@ export const useWebSocketStore = defineStore('websocket', {
     },
 
     /**
-     * 获取WebSocket状态
+     * 获取连接状态
      */
     getStatus() {
       return {
         isConnected: this.isConnected,
+        connectionMode: this.connectionMode,
         reconnectAttempts: this.reconnectAttempts,
         subscribedTopics: this.subscribedTopics,
-        clientStatus: wsClient.getStatus()
+        adapterStatus: realtimeAdapter.getStatus()
       }
     }
   }

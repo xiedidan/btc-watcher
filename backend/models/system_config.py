@@ -44,6 +44,18 @@ class SystemConfig(Base):
         }
     })
 
+    # Heartbeat monitor configuration
+    heartbeat_monitor = Column(JSONB, nullable=False, default={
+        "enabled": True,
+        "default_timeout_seconds": 300,  # 默认5分钟超时
+        "check_interval_seconds": 30,  # 检查间隔30秒
+        "auto_restart": True,  # 默认开启自动重启
+        "max_restart_attempts": 3,  # 最大重启次数
+        "restart_cooldown_seconds": 60,  # 重启冷却时间60秒
+        "notification_enabled": True,  # 启用通知
+        "notification_priority": "P2"  # 通知优先级
+    })
+
     # Timestamps
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

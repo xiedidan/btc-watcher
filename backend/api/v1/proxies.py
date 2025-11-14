@@ -66,6 +66,38 @@ async def list_proxies(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/health-check-config")
+async def get_health_check_config():
+    """获取健康检查配置"""
+    # 这里可以从数据库或配置文件读取
+    # 暂时返回默认值
+    return {
+        "interval_seconds": 3600,
+        "timeout_seconds": 10,
+        "retry_count": 3,
+        "test_url": "https://api.binance.com/api/v3/ping"
+    }
+
+
+@router.put("/health-check-config")
+async def update_health_check_config(config: dict):
+    """更新健康检查配置"""
+    # 这里应该保存到数据库或配置文件
+    # 暂时只做验证
+    required_fields = ["interval_seconds", "timeout_seconds", "retry_count", "test_url"]
+
+    for field in required_fields:
+        if field not in config:
+            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+
+    logger.info(f"Updated health check config: {config}")
+
+    return {
+        "message": "Health check config updated successfully",
+        "config": config
+    }
+
+
 @router.get("/{proxy_id}")
 async def get_proxy(
     proxy_id: int,
@@ -267,7 +299,8 @@ async def test_proxy(
         start_time = datetime.now()
 
         try:
-            async with httpx.AsyncClient(proxies=proxy_url, timeout=10.0) as client:
+            # httpx使用proxy参数（单数）传递代理URL
+            async with httpx.AsyncClient(proxy=proxy_url, timeout=10.0) as client:
                 response = await client.get(test_url)
                 end_time = datetime.now()
                 latency_ms = int((end_time - start_time).total_seconds() * 1000)
@@ -370,35 +403,3 @@ async def swap_priority(
         await db.rollback()
         logger.error(f"Failed to swap priority: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/health-check-config")
-async def get_health_check_config():
-    """获取健康检查配置"""
-    # 这里可以从数据库或配置文件读取
-    # 暂时返回默认值
-    return {
-        "interval_seconds": 3600,
-        "timeout_seconds": 10,
-        "retry_count": 3,
-        "test_url": "https://api.binance.com/api/v3/ping"
-    }
-
-
-@router.put("/health-check-config")
-async def update_health_check_config(config: dict):
-    """更新健康检查配置"""
-    # 这里应该保存到数据库或配置文件
-    # 暂时只做验证
-    required_fields = ["interval_seconds", "timeout_seconds", "retry_count", "test_url"]
-
-    for field in required_fields:
-        if field not in config:
-            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
-
-    logger.info(f"Updated health check config: {config}")
-
-    return {
-        "message": "Health check config updated successfully",
-        "config": config
-    }

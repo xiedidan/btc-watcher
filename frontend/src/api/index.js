@@ -180,6 +180,99 @@ export const notificationAPI = {
   }
 }
 
+// NotifyHub API (新通知系统)
+export const notifyHubAPI = {
+  // 发送通知
+  send: (data) => {
+    return request.post('/notify/send', data)
+  },
+
+  // 获取渠道列表
+  getChannels: (userId = 1) => {
+    return request.get('/notify/channels', { params: { user_id: userId } })
+  },
+
+  // 创建渠道配置
+  createChannel: (data, userId = 1) => {
+    return request.post('/notify/channels', { ...data, user_id: userId })
+  },
+
+  // 更新渠道配置
+  updateChannel: (channelId, data) => {
+    return request.put(`/notify/channels/${channelId}`, data)
+  },
+
+  // 删除渠道配置
+  deleteChannel: (channelId) => {
+    return request.delete(`/notify/channels/${channelId}`)
+  },
+
+  // 测试渠道
+  testChannel: (channelId) => {
+    return request.post(`/notify/channels/${channelId}/test`)
+  },
+
+  // 获取频率限制配置
+  getFrequencyLimits: (userId = 1) => {
+    return request.get('/notify/frequency-limits', { params: { user_id: userId } })
+  },
+
+  // 更新频率限制配置
+  updateFrequencyLimits: (data, userId = 1) => {
+    return request.put('/notify/frequency-limits', { ...data, user_id: userId })
+  },
+
+  // 获取时间规则列表
+  getTimeRules: (userId = 1) => {
+    return request.get('/notify/time-rules', { params: { user_id: userId } })
+  },
+
+  // 创建时间规则
+  createTimeRule: (data, userId = 1) => {
+    return request.post('/notify/time-rules', { ...data, user_id: userId })
+  },
+
+  // 更新时间规则
+  updateTimeRule: (ruleId, data) => {
+    return request.put(`/notify/time-rules/${ruleId}`, data)
+  },
+
+  // 删除时间规则
+  deleteTimeRule: (ruleId) => {
+    return request.delete(`/notify/time-rules/${ruleId}`)
+  },
+
+  // 获取通知历史
+  getHistory: (params = {}) => {
+    return request.get('/notify/history', { params })
+  },
+
+  // 获取统计信息
+  getStats: (period = 'today') => {
+    return request.get('/notify/stats', { params: { period } })
+  },
+
+  // 获取渠道统计
+  getChannelStats: (userId = 1) => {
+    return request.get('/notify/stats/channels', { params: { user_id: userId } })
+  },
+
+  // 获取系统健康状态
+  getSystemHealth: () => {
+    return request.get('/notify/system/health')
+  },
+
+  // 获取队列状态
+  getQueueStatus: () => {
+    return request.get('/notify/system/queue')
+  },
+
+  // 手动触发批量发送
+  flushBatch: () => {
+    return request.post('/notify/system/flush-batch')
+  }
+}
+
 // 代理API
 export const proxyAPI = {
   // 获取代理列表

@@ -1,0 +1,6 @@
+{
+  "10": {
+    "upstream": "http://127.0.0.1:8091",
+    "health_check": "http://127.0.0.1:8091/api/v1/ping"
+  }
+}

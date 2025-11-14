@@ -189,10 +189,11 @@ async def websocket_endpoint(
 
                     # 处理不同类型的消息
                     if message_type == "subscribe":
-                        # 订阅主题
+                        # 订阅主题（支持动态主题，如 strategy_1_logs）
                         topic = message.get("topic")
 
-                        if topic in manager.subscriptions:
+                        if topic:
+                            # manager.subscribe 会自动创建动态主题
                             manager.subscribe(client_id, topic)
                             await manager.send_personal_message(
                                 {
@@ -207,8 +208,7 @@ async def websocket_endpoint(
                             await manager.send_personal_message(
                                 {
                                     "type": "error",
-                                    "message": f"Unknown topic: {topic}",
-                                    "available_topics": list(manager.subscriptions.keys()),
+                                    "message": "Topic is required",
                                     "timestamp": datetime.now().isoformat()
                                 },
                                 client_id

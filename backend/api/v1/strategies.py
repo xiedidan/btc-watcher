@@ -15,8 +15,12 @@ import asyncio
 
 from database import get_db
 from models.strategy import Strategy
+from models.user import User
 from core.freqtrade_manager import FreqTradeGatewayManager
 from services.websocket_service import ws_service
+from services.log_monitor_service import log_monitor_service
+from services.heartbeat_monitor_service import heartbeat_monitor
+from api.v1.auth import get_current_active_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -183,13 +187,17 @@ async def get_strategy(
 @router.post("/")
 async def create_strategy(
     strategy_data: dict,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """创建新策略"""
     try:
+        # 使用当前登录用户的 ID
+        logger.info(f"User {current_user.username} (ID: {current_user.id}) creating strategy: {strategy_data.get('name')}")
+
         # 创建策略记录
         strategy = Strategy(
-            user_id=strategy_data.get("user_id", 1),  # TODO: 从认证获取
+            user_id=current_user.id,  # 使用当前登录用户的 ID
             name=strategy_data["name"],
             description=strategy_data.get("description"),
             strategy_class=strategy_data["strategy_class"],
@@ -212,7 +220,7 @@ async def create_strategy(
         await db.commit()
         await db.refresh(strategy)
 
-        logger.info(f"Created strategy {strategy.id}: {strategy.name}")
+        logger.info(f"Created strategy {strategy.id}: {strategy.name} for user {current_user.username}")
 
         return {
             "id": strategy.id,
@@ -227,12 +235,22 @@ async def create_strategy(
 
 
 async def _start_strategy_background(strategy_id: int, strategy_config: dict, ft_manager: FreqTradeGatewayManager):
-    """后台任务：执行策略启动"""
+    """
+    后台任务：执行策略启动
+
+    处理流程：
+    1. 调用FreqTrade管理器启动策略
+    2. 根据结果更新数据库状态
+    3. 推送WebSocket消息通知前端
+    4. 启动日志监控服务
+    """
     from database.session import SessionLocal
     from datetime import datetime
 
     async with SessionLocal() as db:
         try:
+            logger.info(f"[BG Task] Starting strategy {strategy_id}: {strategy_config.get('name')}")
+
             # 执行启动
             success = await ft_manager.create_strategy(strategy_config, db)
 
@@ -243,11 +261,11 @@ async def _start_strategy_background(strategy_id: int, strategy_config: dict, ft
             strategy = result.scalar_one_or_none()
 
             if not strategy:
-                logger.error(f"Strategy {strategy_id} not found after starting")
+                logger.error(f"[BG Task] Strategy {strategy_id} not found in database after starting attempt")
                 return
 
             if success:
-                # 更新为running状态
+                # ✅ 启动成功：更新为running状态
                 strategy.status = "running"
                 strategy.started_at = datetime.now()
                 strategy.port = ft_manager.strategy_ports.get(strategy_id)
@@ -255,7 +273,24 @@ async def _start_strategy_background(strategy_id: int, strategy_config: dict, ft
 
                 await db.commit()
 
-                logger.info(f"Background task: Strategy {strategy_id} started successfully")
+                logger.info(
+                    f"[BG Task] ✅ Strategy {strategy_id} started successfully "
+                    f"(Port: {strategy.port}, PID: {strategy.process_id})"
+                )
+
+                # 启动日志监控
+                if log_monitor_service:
+                    await log_monitor_service.start_monitoring_strategy(strategy_id)
+                    logger.info(f"[BG Task] Started log monitoring for strategy {strategy_id}")
+
+                # 注册心跳监控
+                if heartbeat_monitor:
+                    log_file_path = str(ft_manager.logs_path / f"strategy_{strategy_id}.log")
+                    await heartbeat_monitor.register_strategy(
+                        strategy_id=strategy_id,
+                        log_file_path=log_file_path
+                    )
+                    logger.info(f"[BG Task] Registered heartbeat monitoring for strategy {strategy_id}")
 
                 # 推送成功状态
                 await ws_service.push_strategy_status(
@@ -265,27 +300,35 @@ async def _start_strategy_background(strategy_id: int, strategy_config: dict, ft
                         "name": strategy.name,
                         "exchange": strategy.exchange,
                         "port": strategy.port,
+                        "process_id": strategy.process_id,
                         "started_at": strategy.started_at.isoformat() if strategy.started_at else None
                     }
                 )
             else:
-                # 启动失败，恢复为stopped
+                # ❌ 启动失败：恢复为stopped
                 strategy.status = "stopped"
                 await db.commit()
 
-                logger.error(f"Background task: Failed to start strategy {strategy_id}")
+                logger.error(f"[BG Task] ❌ Failed to start strategy {strategy_id}: create_strategy returned False")
 
-                # 推送失败状态
+                # 推送失败状态（通用错误）
                 await ws_service.push_strategy_status(
                     strategy_id=strategy.id,
                     status="start_failed",
                     data={
                         "name": strategy.name,
-                        "error": "Failed to start FreqTrade instance"
+                        "error": "Failed to start FreqTrade instance (unknown reason)",
+                        "error_type": "startup_failure"
                     }
                 )
+
         except Exception as e:
-            logger.error(f"Background task error for strategy {strategy_id}: {e}", exc_info=True)
+            error_message = str(e)
+            logger.error(f"[BG Task] ❌ Exception starting strategy {strategy_id}: {error_message}", exc_info=True)
+
+            # 🔍 分析错误类型并生成友好的错误消息
+            error_info = _analyze_startup_error(error_message, strategy_config)
+
             # 尝试恢复状态
             try:
                 result = await db.execute(
@@ -296,16 +339,111 @@ async def _start_strategy_background(strategy_id: int, strategy_config: dict, ft
                     strategy.status = "stopped"
                     await db.commit()
 
+                    # 推送详细的错误信息
                     await ws_service.push_strategy_status(
                         strategy_id=strategy.id,
                         status="start_failed",
                         data={
                             "name": strategy.name,
-                            "error": str(e)
+                            "error": error_info["message"],
+                            "error_type": error_info["type"],
+                            "suggestion": error_info.get("suggestion"),
+                            "raw_error": error_message[:200]  # 保留原始错误（截取前200字符）
                         }
                     )
+
+                    logger.info(f"[BG Task] Strategy {strategy_id} status reset to 'stopped'")
             except Exception as inner_e:
-                logger.error(f"Failed to recover strategy {strategy_id} status: {inner_e}")
+                logger.error(f"[BG Task] Failed to recover strategy {strategy_id} status: {inner_e}")
+
+
+def _analyze_startup_error(error_message: str, strategy_config: dict) -> dict:
+    """
+    分析启动错误并返回友好的错误信息
+
+    Args:
+        error_message: 原始错误消息
+        strategy_config: 策略配置
+
+    Returns:
+        dict: {
+            "type": 错误类型,
+            "message": 友好的错误消息,
+            "suggestion": 解决建议（可选）
+        }
+    """
+    error_lower = error_message.lower()
+    port = strategy_config.get("port", "unknown")
+
+    # 1. 端口冲突
+    if "address already in use" in error_lower or "errno 98" in error_lower:
+        return {
+            "type": "port_conflict",
+            "message": f"端口冲突：端口 {port} 已被其他进程占用",
+            "suggestion": "请停止占用该端口的进程，或者等待片刻后重试"
+        }
+
+    # 2. 进程异常退出
+    if "process exited" in error_lower:
+        # 尝试提取退出码
+        import re
+        exit_code_match = re.search(r'code (\d+)', error_message)
+        exit_code = exit_code_match.group(1) if exit_code_match else "unknown"
+
+        return {
+            "type": "process_exit",
+            "message": f"FreqTrade进程异常退出（退出码: {exit_code}）",
+            "suggestion": "请查看策略日志了解详细原因"
+        }
+
+    # 3. API超时
+    if "failed to start within" in error_lower or "timeout" in error_lower:
+        return {
+            "type": "api_timeout",
+            "message": f"FreqTrade API启动超时（端口: {port}）",
+            "suggestion": "进程可能仍在运行但API未响应，请检查系统资源或策略配置"
+        }
+
+    # 4. 配置错误
+    if "config" in error_lower or "invalid" in error_lower:
+        return {
+            "type": "config_error",
+            "message": "策略配置错误",
+            "suggestion": "请检查策略配置文件是否正确"
+        }
+
+    # 5. 代理错误
+    if "proxy" in error_lower or "connection" in error_lower:
+        proxy_id = strategy_config.get("proxy_id")
+        if proxy_id:
+            return {
+                "type": "proxy_error",
+                "message": f"代理连接失败（代理ID: {proxy_id}）",
+                "suggestion": "请检查代理配置是否正确，或尝试使用其他代理"
+            }
+
+    # 6. 权限错误
+    if "permission" in error_lower or "access denied" in error_lower:
+        return {
+            "type": "permission_error",
+            "message": "权限不足：无法启动FreqTrade进程",
+            "suggestion": "请检查FreqTrade可执行文件权限"
+        }
+
+    # 7. 容量不足
+    if "maximum" in error_lower or "limit" in error_lower:
+        return {
+            "type": "capacity_error",
+            "message": "系统容量不足：已达到最大策略数量或端口限制",
+            "suggestion": "请停止其他策略后重试"
+        }
+
+    # 8. 未知错误（默认）
+    return {
+        "type": "unknown",
+        "message": f"启动失败：{error_message[:100]}",  # 截取前100字符
+        "suggestion": "请查看后端日志了解详细错误信息"
+    }
 
 
 @router.post("/{strategy_id}/start", status_code=202)
@@ -404,6 +542,16 @@ async def _stop_strategy_background(strategy_id: int, ft_manager: FreqTradeGatew
                 return
 
             if success:
+                # 停止日志监控
+                if log_monitor_service:
+                    await log_monitor_service.stop_monitoring_strategy(strategy_id)
+                    logger.info(f"Stopped log monitoring for strategy {strategy_id}")
+
+                # 取消心跳监控注册
+                if heartbeat_monitor:
+                    await heartbeat_monitor.unregister_strategy(strategy_id)
+                    logger.info(f"Unregistered heartbeat monitoring for strategy {strategy_id}")
+
                 # 更新为stopped状态
                 strategy.status = "stopped"
                 strategy.stopped_at = datetime.now()
@@ -624,10 +772,25 @@ async def get_strategy_logs(
     lines: int = 100,
     db: AsyncSession = Depends(get_db)
 ):
-    """获取策略运行日志
+    """获取策略运行日志（结构化）
 
     Parameters:
     - lines: 返回最后N行日志，默认100行
+
+    返回格式：
+    {
+        "strategy_id": 10,
+        "strategy_name": "pt1",
+        "logs": [
+            {
+                "timestamp": "2025-10-27 16:55:41,203",
+                "logger": "freqtrade.freqtradebot",
+                "level": "INFO",
+                "message": "Bot heartbeat. PID=258926...",
+                "raw": "2025-10-27 16:55:41,203 - freqtrade.freqtradebot - INFO - Bot heartbeat..."
+            }
+        ]
+    }
     """
     try:
         # 验证策略存在
@@ -639,31 +802,76 @@ async def get_strategy_logs(
         if not strategy:
             raise HTTPException(status_code=404, detail="Strategy not found")
 
-        # 读取日志文件
-        from pathlib import Path
-        log_path = Path(__file__).parent.parent / "logs" / "freqtrade" / f"strategy_{strategy_id}.log"
+        # 使用日志监控服务获取结构化日志
+        if log_monitor_service:
+            logger.debug(f"Using log_monitor_service for strategy {strategy_id}")
+            logs = await log_monitor_service.get_recent_logs(strategy_id, lines)
 
-        if not log_path.exists():
             return {
                 "strategy_id": strategy_id,
-                "logs": [],
-                "total_lines": 0,
-                "message": "Log file not found - strategy may not have been started yet"
+                "strategy_name": strategy.name,
+                "logs": logs,
+                "total_returned": len(logs)
             }
+        else:
+            # 降级方案：直接读取文件并解析
+            logger.debug(f"Using fallback method for strategy {strategy_id} logs")
+            from pathlib import Path
+            import re
 
-        # 读取最后N行
-        with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
-            all_lines = f.readlines()
-            log_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+            log_path = Path(__file__).parent.parent.parent / "logs" / "freqtrade" / f"strategy_{strategy_id}.log"
 
-        return {
-            "strategy_id": strategy_id,
-            "strategy_name": strategy.name,
-            "logs": [line.rstrip() for line in log_lines],
-            "total_lines": len(all_lines),
-            "returned_lines": len(log_lines),
-            "log_file": str(log_path)
-        }
+            if not log_path.exists():
+                return {
+                    "strategy_id": strategy_id,
+                    "strategy_name": strategy.name,
+                    "logs": [],
+                    "total_returned": 0,
+                    "message": "Log file not found - strategy may not have been started yet"
+                }
+
+            # 读取最后N行
+            with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                all_lines = f.readlines()
+                log_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+
+            # 解析日志格式
+            log_pattern = re.compile(
+                r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) - ([\w\.]+) - (\w+) - (.+)'
+            )
+
+            parsed_logs = []
+            for line in log_lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                match = log_pattern.match(line)
+                if match:
+                    timestamp_str, logger_name, level, message = match.groups()
+                    parsed_logs.append({
+                        "timestamp": timestamp_str,
+                        "logger": logger_name,
+                        "level": level,
+                        "message": message,
+                        "raw": line
+                    })
+                else:
+                    # 无法解析的行，作为原始内容
+                    parsed_logs.append({
+                        "timestamp": "",
+                        "logger": "unknown",
+                        "level": "INFO",
+                        "message": line,
+                        "raw": line
+                    })
+
+            return {
+                "strategy_id": strategy_id,
+                "strategy_name": strategy.name,
+                "logs": parsed_logs,
+                "total_returned": len(parsed_logs)
+            }
 
     except HTTPException:
         raise
@@ -939,13 +1147,31 @@ async def upload_strategy_file(
         # 7. 清理临时文件
         Path(tmp_path).unlink(missing_ok=True)
 
+        # 转换策略类对象，使用前端期望的字段名
+        frontend_strategy_classes = [
+            {
+                "name": sc["class_name"],  # 前端期望的字段名
+                "description": sc["description"],
+                "base_classes": sc["base_classes"],
+                "methods": sc["methods"],
+                "has_populate_indicators": sc["has_populate_indicators"],
+                "has_populate_entry": sc["has_populate_entry"],
+                "has_populate_exit": sc["has_populate_exit"],
+                "is_valid_strategy": sc["is_valid_strategy"]
+            }
+            for sc in strategy_classes
+        ]
+
         return {
+            "success": True,  # 添加 success 字段供前端判断
             "filename": file.filename,
+            "file_id": file.filename.replace('.py', ''),  # 添加 file_id
+            "file_path": str(strategies_path / file.filename),  # 添加 file_path
             "size_bytes": len(content),
-            "strategy_classes": strategy_classes,
+            "strategy_classes": frontend_strategy_classes,  # 使用转换后的对象
             "total_classes": len(strategy_classes),
             "valid_strategies": len([s for s in strategy_classes if s["is_valid_strategy"]]),
-            "message": f"File uploaded successfully. Found {len(strategy_classes)} strategy classe(s)."
+            "message": f"文件上传成功，发现 {len(strategy_classes)} 个策略类"
         }
 
     except HTTPException:

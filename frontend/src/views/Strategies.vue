@@ -96,6 +96,22 @@
               {{ t('strategy.stop') }}
             </el-button>
             <el-button
+              v-else-if="row.status === 'error'"
+              type="success"
+              size="small"
+              @click="handleStart(row)"
+            >
+              {{ t('strategy.restart') }}
+            </el-button>
+            <el-button
+              v-if="row.status === 'error'"
+              type="danger"
+              size="small"
+              @click="handleStop(row)"
+            >
+              {{ t('strategy.forceStop') }}
+            </el-button>
+            <el-button
               v-else-if="row.status === 'starting'"
               type="warning"
               size="small"
@@ -171,7 +187,7 @@
         <!-- 策略文件上传 -->
         <el-divider content-position="left">{{ t('strategy.strategyCode') }}</el-divider>
 
-        <el-form-item :label="t('strategy.strategyFile')" prop="strategy_file">
+        <el-form-item :label="t('strategy.strategyFile')">
           <div style="width: 100%">
             <el-upload
               ref="uploadRef"
@@ -245,12 +261,25 @@
             multiple
             filterable
             allow-create
+            default-first-option
+            :reserve-keyword="false"
             :placeholder="t('strategy.enterPairs')"
+            style="width: 100%"
           >
             <el-option label="BTC/USDT" value="BTC/USDT" />
             <el-option label="ETH/USDT" value="ETH/USDT" />
             <el-option label="BNB/USDT" value="BNB/USDT" />
+            <el-option label="SOL/USDT" value="SOL/USDT" />
+            <el-option label="ADA/USDT" value="ADA/USDT" />
+            <el-option label="DOGE/USDT" value="DOGE/USDT" />
+            <el-option label="XRP/USDT" value="XRP/USDT" />
+            <el-option label="DOT/USDT" value="DOT/USDT" />
+            <el-option label="MATIC/USDT" value="MATIC/USDT" />
+            <el-option label="AVAX/USDT" value="AVAX/USDT" />
           </el-select>
+          <div style="margin-top: 4px; font-size: 12px; color: #909399">
+            支持自定义输入，例如：输入 "SOL/USDT" 后按回车添加
+          </div>
         </el-form-item>
 
         <el-form-item :label="t('strategy.dryRun')">
@@ -326,10 +355,37 @@
           <div style="width: 100%">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
               <span style="font-size: 12px; width: 30px">0.0</span>
-              <div style="flex: 1; height: 20px; background: linear-gradient(to right, #909399 0%, #909399 {{ createForm.signal_thresholds.weak * 100 }}%, #E6A23C {{ createForm.signal_thresholds.weak * 100 }}%, #E6A23C {{ createForm.signal_thresholds.medium * 100 }}%, #F56C6C {{ createForm.signal_thresholds.medium * 100 }}%, #F56C6C {{ createForm.signal_thresholds.strong * 100 }}%, #67C23A {{ createForm.signal_thresholds.strong * 100 }}%, #67C23A 100%); border-radius: 4px; position: relative">
-                <div style="position: absolute; left: {{ createForm.signal_thresholds.weak * 100 }}%; top: -24px; transform: translateX(-50%); font-size: 10px; color: #E6A23C">{{ createForm.signal_thresholds.weak }}</div>
-                <div style="position: absolute; left: {{ createForm.signal_thresholds.medium * 100 }}%; top: -24px; transform: translateX(-50%); font-size: 10px; color: #F56C6C">{{ createForm.signal_thresholds.medium }}</div>
-                <div style="position: absolute; left: {{ createForm.signal_thresholds.strong * 100 }}%; top: -24px; transform: translateX(-50%); font-size: 10px; color: #67C23A">{{ createForm.signal_thresholds.strong }}</div>
+              <div :style="{
+                flex: 1,
+                height: '20px',
+                background: `linear-gradient(to right, #909399 0%, #909399 ${createForm.signal_thresholds.weak * 100}%, #E6A23C ${createForm.signal_thresholds.weak * 100}%, #E6A23C ${createForm.signal_thresholds.medium * 100}%, #F56C6C ${createForm.signal_thresholds.medium * 100}%, #F56C6C ${createForm.signal_thresholds.strong * 100}%, #67C23A ${createForm.signal_thresholds.strong * 100}%, #67C23A 100%)`,
+                borderRadius: '4px',
+                position: 'relative'
+              }">
+                <div :style="{
+                  position: 'absolute',
+                  left: `${createForm.signal_thresholds.weak * 100}%`,
+                  top: '-24px',
+                  transform: 'translateX(-50%)',
+                  fontSize: '10px',
+                  color: '#E6A23C'
+                }">{{ createForm.signal_thresholds.weak }}</div>
+                <div :style="{
+                  position: 'absolute',
+                  left: `${createForm.signal_thresholds.medium * 100}%`,
+                  top: '-24px',
+                  transform: 'translateX(-50%)',
+                  fontSize: '10px',
+                  color: '#F56C6C'
+                }">{{ createForm.signal_thresholds.medium }}</div>
+                <div :style="{
+                  position: 'absolute',
+                  left: `${createForm.signal_thresholds.strong * 100}%`,
+                  top: '-24px',
+                  transform: 'translateX(-50%)',
+                  fontSize: '10px',
+                  color: '#67C23A'
+                }">{{ createForm.signal_thresholds.strong }}</div>
               </div>
               <span style="font-size: 12px; width: 30px">1.0</span>
             </div>
@@ -471,6 +527,47 @@
           </div>
         </el-card>
 
+        <!-- 实时日志展示 -->
+        <el-card shadow="never" style="margin-bottom: 20px">
+          <template #header>
+            <div style="display: flex; justify-content: space-between; align-items: center">
+              <span>运行日志</span>
+              <el-space>
+                <el-select v-model="logFilter" size="small" style="width: 120px">
+                  <el-option label="全部" value="ALL" />
+                  <el-option label="INFO" value="INFO" />
+                  <el-option label="WARNING" value="WARNING" />
+                  <el-option label="ERROR" value="ERROR" />
+                </el-select>
+                <el-checkbox v-model="autoScroll" size="small">自动滚动</el-checkbox>
+                <el-button size="small" @click="clearLogs">清空</el-button>
+                <el-button size="small" @click="refreshLogs">刷新</el-button>
+              </el-space>
+            </div>
+          </template>
+
+          <div ref="logContainer" class="log-container">
+            <div v-if="filteredLogs.length === 0" class="log-empty">
+              <el-empty description="暂无日志数据" :image-size="80" />
+            </div>
+            <div v-else>
+              <div
+                v-for="(log, index) in filteredLogs"
+                :key="index"
+                class="log-entry"
+                :class="`log-level-${log.level?.toLowerCase() || 'info'}`"
+              >
+                <span class="log-timestamp">{{ log.timestamp }}</span>
+                <span class="log-level" :class="`level-${log.level?.toLowerCase() || 'info'}`">
+                  {{ log.level || 'INFO' }}
+                </span>
+                <span class="log-logger">{{ log.logger || 'freqtrade' }}</span>
+                <span class="log-message">{{ log.message }}</span>
+              </div>
+            </div>
+          </div>
+        </el-card>
+
         <!-- 操作按钮 -->
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button @click="showDetailDialog = false">{{ t('common.close') }}</el-button>
@@ -487,6 +584,20 @@
             @click="handleStopFromDetail"
           >
             {{ t('strategy.stop') }}
+          </el-button>
+          <el-button
+            v-else-if="currentStrategy.status === 'error'"
+            type="success"
+            @click="handleStartFromDetail"
+          >
+            {{ t('strategy.restart') }}
+          </el-button>
+          <el-button
+            v-if="currentStrategy.status === 'error'"
+            type="danger"
+            @click="handleStopFromDetail"
+          >
+            {{ t('strategy.forceStop') }}
           </el-button>
           <el-button
             v-else-if="currentStrategy.status === 'starting'"
@@ -531,10 +642,15 @@ const showDetailDialog = ref(false)
 const createFormRef = ref(null)
 const uploadRef = ref(null)
 const currentStrategy = ref(null)
+const strategyLogs = ref([])  // 策略日志
+const logFilter = ref('ALL')  // 日志级别过滤
+const autoScroll = ref(true)  // 自动滚动
+const logContainer = ref(null)  // 日志容器引用
 let autoSaveTimer = null
 let draftKey = null
 let detailRefreshTimer = null  // 详情页自动刷新定时器
 let statusPollingTimers = {}  // 状态轮询定时器 (strategy_id -> timer)
+let wsUnsubscribeLogs = null  // WebSocket日志订阅取消函数
 
 // 文件上传相关状态
 const uploadedFiles = ref([])
@@ -550,6 +666,14 @@ const uploadHeaders = computed(() => {
   return {
     'Authorization': `Bearer ${userStore.token}`
   }
+})
+
+// 过滤后的日志
+const filteredLogs = computed(() => {
+  if (logFilter.value === 'ALL') {
+    return strategyLogs.value
+  }
+  return strategyLogs.value.filter(log => log.level === logFilter.value)
 })
 
 const searchForm = reactive({
@@ -580,7 +704,13 @@ const createRules = {
   strategy_class: [{ required: true, message: t('strategy.selectClass'), trigger: 'change' }],
   exchange: [{ required: true, message: t('strategy.enterExchange'), trigger: 'change' }],
   timeframe: [{ required: true, message: t('strategy.enterTimeframe'), trigger: 'change' }],
-  pair_whitelist: [{ required: true, message: t('strategy.enterPairs'), trigger: 'change' }]
+  pair_whitelist: [{
+    required: true,
+    type: 'array',
+    min: 1,
+    message: t('strategy.enterPairs'),
+    trigger: 'change'
+  }]
 }
 
 // 文件上传处理函数
@@ -634,7 +764,27 @@ const handleUploadSuccess = (response, file, fileList) => {
 
 const handleUploadError = (error, file) => {
   console.error('Upload error:', error)
-  ElMessage.error(t('strategy.uploadFailed'))
+  let errorMessage = t('strategy.uploadFailed')
+
+  // 尝试解析错误消息
+  try {
+    if (error.message) {
+      errorMessage = error.message
+    } else if (typeof error === 'string') {
+      errorMessage = error
+    }
+  } catch (e) {
+    console.error('Failed to parse error:', e)
+  }
+
+  ElMessage.error(errorMessage)
+
+  // 清除已上传文件列表
+  uploadedFiles.value = []
+  availableStrategyClasses.value = []
+  strategyFileInfo.value = null
+  createForm.strategy_file = null
+  createForm.strategy_class = ''
 }
 
 const fetchData = async () => {
@@ -765,6 +915,12 @@ const handleView = async (row) => {
     currentStrategy.value = detail
     showDetailDialog.value = true
 
+    // 加载历史日志
+    await loadStrategyLogs(row.id)
+
+    // 订阅WebSocket实时日志
+    subscribeToStrategyLogs(row.id)
+
     // 如果是正在启动或停止状态，启动自动刷新
     startDetailRefresh()
   } catch (error) {
@@ -809,19 +965,46 @@ const handleOpenCreateDialog = () => {
 }
 
 const handleCreate = async () => {
-  const valid = await createFormRef.value.validate().catch(() => false)
-  if (!valid) return
-
-  submitting.value = true
   try {
+    // 验证表单
+    const valid = await createFormRef.value.validate().catch((err) => {
+      console.error('Form validation failed:', err)
+      return false
+    })
+
+    if (!valid) {
+      ElMessage.warning('请填写完整的表单信息')
+      return
+    }
+
+    // 检查是否上传了策略文件
+    if (!createForm.strategy_file) {
+      ElMessage.warning('请先上传策略文件')
+      return
+    }
+
+    // 检查是否选择了策略类
+    if (!createForm.strategy_class) {
+      ElMessage.warning('请选择策略类')
+      return
+    }
+
+    submitting.value = true
+
     await strategyStore.createStrategy(createForm)
     ElMessage.success(t('strategy.createSuccess'))
+
     // 清除草稿
     clearDraft()
+
+    // 关闭对话框
     showCreateDialog.value = false
-    fetchData()
+
+    // 刷新列表
+    await fetchData()
   } catch (error) {
-    ElMessage.error(t('strategy.createFailed'))
+    console.error('Failed to create strategy:', error)
+    ElMessage.error(error.message || t('strategy.createFailed'))
   } finally {
     submitting.value = false
   }
@@ -1097,6 +1280,85 @@ const stopDetailRefresh = () => {
   }
 }
 
+// ===== 日志相关方法 =====
+
+// 加载策略历史日志
+const loadStrategyLogs = async (strategyId) => {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/v1/strategies/${strategyId}/logs?lines=100`,
+      {
+        headers: {
+          'Authorization': `Bearer ${userStore.token}`
+        }
+      }
+    )
+    const data = await response.json()
+    strategyLogs.value = data.logs || []
+
+    // 滚动到底部
+    setTimeout(() => scrollLogsToBottom(), 100)
+  } catch (error) {
+    console.error('Failed to load strategy logs:', error)
+    strategyLogs.value = []
+  }
+}
+
+// 订阅WebSocket实时日志（支持动态主题订阅）
+const subscribeToStrategyLogs = (strategyId) => {
+  // 取消之前的订阅
+  if (wsUnsubscribeLogs) {
+    wsUnsubscribeLogs()
+    wsUnsubscribeLogs = null
+  }
+
+  // 订阅策略特定日志主题（动态主题）
+  const topic = `strategy_${strategyId}_logs`
+  wsUnsubscribeLogs = strategyStore.subscribeToTopic(topic, (message) => {
+    if (message.data && message.data.log) {
+      // 添加新日志到列表
+      strategyLogs.value.push(message.data.log)
+
+      // 限制日志数量，保留最新的500条
+      if (strategyLogs.value.length > 500) {
+        strategyLogs.value = strategyLogs.value.slice(-500)
+      }
+
+      // 自动滚动到底部
+      if (autoScroll.value) {
+        setTimeout(() => scrollLogsToBottom(), 50)
+      }
+    }
+  })
+}
+
+// 取消订阅日志
+const unsubscribeFromLogs = () => {
+  if (wsUnsubscribeLogs) {
+    wsUnsubscribeLogs()
+    wsUnsubscribeLogs = null
+  }
+}
+
+// 滚动日志到底部
+const scrollLogsToBottom = () => {
+  if (logContainer.value) {
+    logContainer.value.scrollTop = logContainer.value.scrollHeight
+  }
+}
+
+// 清空日志
+const clearLogs = () => {
+  strategyLogs.value = []
+}
+
+// 刷新日志
+const refreshLogs = async () => {
+  if (currentStrategy.value) {
+    await loadStrategyLogs(currentStrategy.value.id)
+  }
+}
+
 // 监听对话框关闭，停止自动保存
 watch(showCreateDialog, (newVal) => {
   if (newVal) {
@@ -1110,6 +1372,8 @@ watch(showCreateDialog, (newVal) => {
 watch(showDetailDialog, (newVal) => {
   if (!newVal) {
     stopDetailRefresh()
+    unsubscribeFromLogs()  // 取消日志订阅
+    clearLogs()  // 清空日志
   }
 })
 
@@ -1150,5 +1414,107 @@ onUnmounted(() => {
 
 .search-form {
   margin-bottom: 16px;
+}
+
+/* 日志容器样式 */
+.log-container {
+  height: 400px;
+  overflow-y: auto;
+  background-color: #1e1e1e;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.log-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+.log-entry {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-timestamp {
+  color: #858585;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.log-level {
+  font-weight: bold;
+  width: 60px;
+  text-align: center;
+  flex-shrink: 0;
+  border-radius: 3px;
+  padding: 0 6px;
+}
+
+.log-level.level-info {
+  color: #4fc3f7;
+  background-color: rgba(79, 195, 247, 0.1);
+}
+
+.log-level.level-warning {
+  color: #ffa726;
+  background-color: rgba(255, 167, 38, 0.1);
+}
+
+.log-level.level-error,
+.log-level.level-critical {
+  color: #ef5350;
+  background-color: rgba(239, 83, 80, 0.1);
+}
+
+.log-level.level-debug {
+  color: #9575cd;
+  background-color: rgba(149, 117, 205, 0.1);
+}
+
+.log-logger {
+  color: #66bb6a;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.log-message {
+  color: #d4d4d4;
+  flex: 1;
+  word-break: break-word;
+}
+
+/* 自定义滚动条 */
+.log-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log-container::-webkit-scrollbar-track {
+  background: #2d2d2d;
+  border-radius: 4px;
+}
+
+.log-container::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.log-container::-webkit-scrollbar-thumb:hover {
+  background: #666;
 }
 </style>

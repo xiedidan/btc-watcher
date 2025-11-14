@@ -498,6 +498,102 @@
           </el-form>
         </el-tab-pane>
 
+        <!-- 心跳监控 -->
+        <el-tab-pane :label="t('settings.heartbeatMonitor')" name="heartbeat">
+          <el-form :model="heartbeatConfig" label-width="180px" v-loading="heartbeatLoading">
+            <el-form-item :label="t('settings.heartbeatEnabled')">
+              <el-switch v-model="heartbeatConfig.enabled" />
+              <div class="form-item-tip">
+                {{ t('settings.heartbeatEnabledTip') }}
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('settings.heartbeatTimeout')">
+              <el-input-number
+                v-model="heartbeatConfig.default_timeout_seconds"
+                :min="30"
+                :max="3600"
+                :step="30"
+              />
+              <span style="margin-left: 10px">{{ t('settings.seconds') }}</span>
+              <div class="form-item-tip">
+                {{ t('settings.heartbeatTimeoutTip') }}
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('settings.heartbeatCheckInterval')">
+              <el-input-number
+                v-model="heartbeatConfig.check_interval_seconds"
+                :min="10"
+                :max="300"
+                :step="10"
+              />
+              <span style="margin-left: 10px">{{ t('settings.seconds') }}</span>
+              <div class="form-item-tip">
+                {{ t('settings.heartbeatCheckIntervalTip') }}
+              </div>
+            </el-form-item>
+
+            <el-divider />
+
+            <el-form-item :label="t('settings.heartbeatAutoRestart')">
+              <el-switch v-model="heartbeatConfig.auto_restart" />
+              <div class="form-item-tip">
+                {{ t('settings.heartbeatAutoRestartTip') }}
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('settings.heartbeatMaxRestarts')">
+              <el-input-number
+                v-model="heartbeatConfig.max_restart_attempts"
+                :min="1"
+                :max="10"
+              />
+              <div class="form-item-tip">
+                {{ t('settings.heartbeatMaxRestartsTip') }}
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('settings.heartbeatRestartCooldown')">
+              <el-input-number
+                v-model="heartbeatConfig.restart_cooldown_seconds"
+                :min="30"
+                :max="600"
+                :step="30"
+              />
+              <span style="margin-left: 10px">{{ t('settings.seconds') }}</span>
+              <div class="form-item-tip">
+                {{ t('settings.heartbeatRestartCooldownTip') }}
+              </div>
+            </el-form-item>
+
+            <el-divider />
+
+            <el-form-item :label="t('settings.heartbeatNotification')">
+              <el-switch v-model="heartbeatConfig.notification_enabled" />
+              <div class="form-item-tip">
+                {{ t('settings.heartbeatNotificationTip') }}
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="t('settings.heartbeatNotificationPriority')">
+              <el-select v-model="heartbeatConfig.notification_priority">
+                <el-option label="P0 (严重)" value="P0" />
+                <el-option label="P1 (重要)" value="P1" />
+                <el-option label="P2 (一般)" value="P2" />
+              </el-select>
+              <div class="form-item-tip">
+                {{ t('settings.heartbeatNotificationPriorityTip') }}
+              </div>
+            </el-form-item>
+
+            <el-form-item>
+              <el-button type="primary" @click="saveHeartbeatConfig">{{ t('settings.save') }}</el-button>
+              <el-button @click="loadHeartbeatConfig">{{ t('settings.cancel') }}</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
         <!-- 关于 -->
         <el-tab-pane :label="t('settings.about')" name="about">
           <el-descriptions :column="1" border>
@@ -719,6 +815,56 @@
           </el-form-item>
         </template>
 
+        <!-- Discord配置 -->
+        <template v-if="currentChannel.type === 'discord'">
+          <el-form-item :label="t('settings.connectionMode')">
+            <el-radio-group v-model="channelForm.config.use_webhook">
+              <el-radio :label="true">Webhook {{ t('settings.mode') }}</el-radio>
+              <el-radio :label="false">Bot {{ t('settings.mode') }}</el-radio>
+            </el-radio-group>
+            <div class="form-item-tip">
+              Webhook{{ t('settings.modeSimple') }}，Bot{{ t('settings.modeAdvanced') }}
+            </div>
+          </el-form-item>
+
+          <!-- Webhook模式 -->
+          <template v-if="channelForm.config.use_webhook">
+            <el-form-item label="Webhook URL">
+              <el-input
+                v-model="channelForm.config.webhook_url"
+                placeholder="https://discord.com/api/webhooks/..."
+              />
+              <div class="form-item-tip">
+                {{ t('settings.discordWebhookTip') }}
+              </div>
+            </el-form-item>
+          </template>
+
+          <!-- Bot模式 -->
+          <template v-else>
+            <el-form-item label="Bot Token">
+              <el-input
+                v-model="channelForm.config.bot_token"
+                placeholder="Bot Token"
+                type="password"
+                show-password
+              />
+              <div class="form-item-tip">
+                {{ t('settings.discordBotTokenTip') }}
+              </div>
+            </el-form-item>
+            <el-form-item label="Channel ID">
+              <el-input
+                v-model="channelForm.config.channel_id"
+                placeholder="123456789012345678"
+              />
+              <div class="form-item-tip">
+                {{ t('settings.discordChannelIdTip') }}
+              </div>
+            </el-form-item>
+          </template>
+        </template>
+
         <el-divider content-position="left">{{ t('settings.messageTemplates') }}</el-divider>
 
         <el-form-item :label="t('settings.p2Template')">
@@ -772,7 +918,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useWebSocketStore } from '@/stores/websocket'
-import { notificationAPI, settingsAPI } from '@/api'
+import { notificationAPI, settingsAPI, notifyHubAPI } from '@/api'
 
 const { t } = useI18n()
 
@@ -790,28 +936,28 @@ const currentChannel = ref(null)
 const notificationChannels = ref([
   {
     id: 1,
-    type: 'sms',
-    name: '短信通知',
+    type: 'telegram',
+    name: 'Telegram机器人',
     priority: 1,
     enabled: false,
     configured: false,
-    levels: ['P2'],
+    levels: ['P2', 'P1', 'P0'],
     last_test_time: null
   },
   {
     id: 2,
-    type: 'feishu',
-    name: '飞书机器人',
+    type: 'discord',
+    name: 'Discord机器人',
     priority: 2,
     enabled: false,
     configured: false,
-    levels: ['P2', 'P1'],
+    levels: ['P2', 'P1', 'P0'],
     last_test_time: null
   },
   {
     id: 3,
-    type: 'wechat',
-    name: '企业微信',
+    type: 'feishu',
+    name: '飞书机器人',
     priority: 3,
     enabled: false,
     configured: false,
@@ -820,22 +966,32 @@ const notificationChannels = ref([
   },
   {
     id: 4,
+    type: 'wechat',
+    name: '企业微信',
+    priority: 4,
+    enabled: false,
+    configured: false,
+    levels: ['P2', 'P1', 'P0'],
+    last_test_time: null
+  },
+  {
+    id: 5,
     type: 'email',
     name: '邮件通知',
-    priority: 4,
+    priority: 5,
     enabled: false,
     configured: false,
     levels: ['P1', 'P0'],
     last_test_time: null
   },
   {
-    id: 5,
-    type: 'telegram',
-    name: 'Telegram机器人',
-    priority: 5,
+    id: 6,
+    type: 'sms',
+    name: '短信通知',
+    priority: 6,
     enabled: false,
     configured: false,
-    levels: ['P2', 'P1'],
+    levels: ['P2'],
     last_test_time: null
   }
 ])
@@ -870,11 +1026,12 @@ const channelForm = reactive({
 // 渠道类型名称映射
 const getChannelTypeName = (type) => {
   const nameMap = {
-    sms: t('settings.smsChannel'),
+    telegram: t('settings.telegramChannel'),
+    discord: t('settings.discordChannel'),
     feishu: t('settings.feishuChannel'),
     wechat: t('settings.wechatChannel'),
     email: t('settings.emailChannel'),
-    telegram: t('settings.telegramChannel')
+    sms: t('settings.smsChannel')
   }
   return nameMap[type] || type
 }
@@ -882,11 +1039,12 @@ const getChannelTypeName = (type) => {
 // 渠道类型颜色映射
 const getChannelTypeColor = (type) => {
   const colorMap = {
-    sms: 'danger',
-    feishu: 'primary',
+    telegram: 'primary',
+    discord: '',
+    feishu: 'success',
     wechat: 'success',
     email: 'warning',
-    telegram: 'info'
+    sms: 'danger'
   }
   return colorMap[type] || ''
 }
@@ -977,12 +1135,19 @@ const handleConfigureChannel = (channel) => {
 
   // 根据渠道类型初始化config
   switch (channel.type) {
-    case 'sms':
+    case 'telegram':
       channelForm.config = {
-        api_key: '',
-        api_secret: '',
-        sign_name: '',
-        phone_numbers: []
+        bot_token: '',
+        chat_ids: [],
+        parse_mode: 'Markdown'
+      }
+      break
+    case 'discord':
+      channelForm.config = {
+        webhook_url: '',
+        bot_token: '',
+        channel_id: '',
+        use_webhook: true
       }
       break
     case 'feishu':
@@ -1010,11 +1175,12 @@ const handleConfigureChannel = (channel) => {
         use_tls: true
       }
       break
-    case 'telegram':
+    case 'sms':
       channelForm.config = {
-        bot_token: '',
-        chat_ids: [],
-        parse_mode: 'Markdown'
+        api_key: '',
+        api_secret: '',
+        sign_name: '',
+        phone_numbers: []
       }
       break
   }
@@ -1036,24 +1202,30 @@ const handleTestChannel = async (channel) => {
 
   testingChannelId.value = channel.id
   try {
-    // TODO: 调用API测试渠道
-    // const res = await notificationAPI.test(channel.type)
+    // 调用NotifyHub API测试渠道
+    // 如果渠道有backend_id，使用它；否则尝试从localStorage获取
+    const savedConfig = localStorage.getItem(`notification_channel_${channel.id}`)
+    const config = savedConfig ? JSON.parse(savedConfig) : null
 
-    // 模拟测试
-    await new Promise(resolve => setTimeout(resolve, 1500))
-
-    channel.last_test_time = new Date().toISOString()
-    ElMessage.success(t('settings.testMessageSent'))
+    if (config && config.backend_id) {
+      // 调用后端测试API
+      await notifyHubAPI.testChannel(config.backend_id)
+      channel.last_test_time = new Date().toISOString()
+      ElMessage.success(t('settings.testMessageSent'))
+    } else {
+      ElMessage.warning('请先保存配置后再测试')
+    }
   } catch (error) {
     console.error('Failed to test channel:', error)
-    ElMessage.error(t('settings.testFailed'))
+    const errorMsg = error.response?.data?.detail || error.message || '测试失败'
+    ElMessage.error(`${t('settings.testFailed')}: ${errorMsg}`)
   } finally {
     testingChannelId.value = null
   }
 }
 
 // 保存渠道配置
-const saveChannelConfig = () => {
+const saveChannelConfig = async () => {
   if (!channelForm.levels || channelForm.levels.length === 0) {
     ElMessage.warning(t('settings.selectNotificationLevel'))
     return
@@ -1064,10 +1236,23 @@ const saveChannelConfig = () => {
   const config = channelForm.config
 
   switch (currentChannel.value.type) {
-    case 'sms':
-      if (!config.api_key || !config.api_secret || config.phone_numbers.length === 0) {
-        ElMessage.warning(t('settings.fillSmsConfig'))
+    case 'telegram':
+      if (!config.bot_token || config.chat_ids.length === 0) {
+        ElMessage.warning(t('settings.fillTelegramConfig'))
         isValid = false
+      }
+      break
+    case 'discord':
+      if (config.use_webhook) {
+        if (!config.webhook_url) {
+          ElMessage.warning(t('settings.fillDiscordWebhook'))
+          isValid = false
+        }
+      } else {
+        if (!config.bot_token || !config.channel_id) {
+          ElMessage.warning(t('settings.fillDiscordBotConfig'))
+          isValid = false
+        }
       }
       break
     case 'feishu':
@@ -1088,9 +1273,9 @@ const saveChannelConfig = () => {
         isValid = false
       }
       break
-    case 'telegram':
-      if (!config.bot_token || config.chat_ids.length === 0) {
-        ElMessage.warning(t('settings.fillTelegramConfig'))
+    case 'sms':
+      if (!config.api_key || !config.api_secret || config.phone_numbers.length === 0) {
+        ElMessage.warning(t('settings.fillSmsConfig'))
         isValid = false
       }
       break
@@ -1098,18 +1283,46 @@ const saveChannelConfig = () => {
 
   if (!isValid) return
 
-  // 保存配置到localStorage
-  const channelConfig = {
-    id: currentChannel.value.id,
-    type: currentChannel.value.type,
-    name: channelForm.name,
-    levels: channelForm.levels,
-    config: channelForm.config,
-    templates: channelForm.templates,
-    enabled: currentChannel.value.enabled || false
-  }
-
   try {
+    // 准备提交给后端的数据
+    const channelData = {
+      channel_type: currentChannel.value.type,
+      channel_name: channelForm.name,
+      enabled: currentChannel.value.enabled || false,
+      priority: currentChannel.value.priority || 1,
+      supported_priorities: channelForm.levels,
+      config: channelForm.config,
+      templates: channelForm.templates,
+      rate_limit_enabled: true,
+      max_notifications_per_hour: 60,
+      max_notifications_per_day: 500
+    }
+
+    // 检查是否已经保存过（有backend_id）
+    const savedConfig = localStorage.getItem(`notification_channel_${currentChannel.value.id}`)
+    const existingConfig = savedConfig ? JSON.parse(savedConfig) : null
+
+    let response
+    if (existingConfig && existingConfig.backend_id) {
+      // 更新已存在的配置
+      response = await notifyHubAPI.updateChannel(existingConfig.backend_id, channelData)
+    } else {
+      // 创建新配置
+      response = await notifyHubAPI.createChannel(channelData)
+    }
+
+    // 保存配置到localStorage（包含backend_id）
+    const channelConfig = {
+      id: currentChannel.value.id,
+      backend_id: response.data.id || existingConfig?.backend_id,
+      type: currentChannel.value.type,
+      name: channelForm.name,
+      levels: channelForm.levels,
+      config: channelForm.config,
+      templates: channelForm.templates,
+      enabled: currentChannel.value.enabled || false
+    }
+
     localStorage.setItem(`notification_channel_${currentChannel.value.id}`, JSON.stringify(channelConfig))
 
     // 在notificationChannels数组中找到并更新渠道 - 使用响应式方式
@@ -1125,12 +1338,10 @@ const saveChannelConfig = () => {
 
     ElMessage.success(t('settings.channelConfigSaved'))
     showChannelConfigDialog.value = false
-
-    // TODO: 调用API保存配置
-    // await notificationAPI.updateChannel(currentChannel.value.id, channelConfig)
   } catch (error) {
     console.error('Failed to save channel config:', error)
-    ElMessage.error(t('settings.saveConfigFailed'))
+    const errorMsg = error.response?.data?.detail || error.message || '保存失败'
+    ElMessage.error(`${t('settings.saveConfigFailed')}: ${errorMsg}`)
   }
 }
 
@@ -1250,6 +1461,20 @@ const accountForm = reactive({
   new_password: '',
   confirm_password: ''
 })
+
+// 心跳监控配置
+const heartbeatConfig = reactive({
+  enabled: true,
+  default_timeout_seconds: 300,
+  check_interval_seconds: 30,
+  auto_restart: true,
+  max_restart_attempts: 3,
+  restart_cooldown_seconds: 60,
+  notification_enabled: true,
+  notification_priority: 'P2'
+})
+
+const heartbeatLoading = ref(false)
 
 // 通知权限
 const notificationPermission = ref('default')
@@ -1395,11 +1620,11 @@ const handleBrowserNotificationChange = (enabled) => {
 }
 
 // 重连WebSocket
-const reconnectWebSocket = () => {
+const reconnectWebSocket = async () => {
   if (userStore.token) {
     wsStore.disconnect()
-    setTimeout(() => {
-      wsStore.connect(userStore.token)
+    setTimeout(async () => {
+      await wsStore.connect(userStore.token, 'settings')
       ElMessage.success(t('settings.reconnectingWs'))
     }, 500)
   } else {
@@ -1443,10 +1668,60 @@ const changePassword = async () => {
   }
 }
 
+// 加载心跳监控配置
+const loadHeartbeatConfig = async () => {
+  heartbeatLoading.value = true
+  try {
+    const response = await fetch('/api/v1/system/config/heartbeat-monitor', {
+      headers: {
+        'Authorization': `Bearer ${userStore.token}`
+      }
+    })
+    if (response.ok) {
+      const data = await response.json()
+      Object.assign(heartbeatConfig, data)
+    } else {
+      throw new Error(await response.text())
+    }
+  } catch (error) {
+    console.error('Failed to load heartbeat config:', error)
+    ElMessage.error(t('settings.loadHeartbeatConfigFailed'))
+  } finally {
+    heartbeatLoading.value = false
+  }
+}
+
+// 保存心跳监控配置
+const saveHeartbeatConfig = async () => {
+  heartbeatLoading.value = true
+  try {
+    const response = await fetch('/api/v1/system/config/heartbeat-monitor', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${userStore.token}`
+      },
+      body: JSON.stringify(heartbeatConfig)
+    })
+
+    if (response.ok) {
+      ElMessage.success(t('settings.heartbeatConfigSaved'))
+    } else {
+      throw new Error(await response.text())
+    }
+  } catch (error) {
+    console.error('Failed to save heartbeat config:', error)
+    ElMessage.error(t('settings.saveHeartbeatConfigFailed'))
+  } finally {
+    heartbeatLoading.value = false
+  }
+}
+
 // 组件挂载
 onMounted(() => {
   loadSettings()
   loadChannelConfigs()
+  loadHeartbeatConfig()
 
   // 检查通知权限
   if ('Notification' in window) {

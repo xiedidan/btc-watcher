@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { strategyAPI } from '@/api'
+import realtimeAdapter from '@/utils/realtimeDataAdapter'
 
 export const useStrategyStore = defineStore('strategy', () => {
   // State
@@ -93,6 +94,34 @@ export const useStrategyStore = defineStore('strategy', () => {
     }
   }
 
+  /**
+   * 订阅WebSocket主题并注册回调
+   * @param {string} topic - 主题名称
+   * @param {function} callback - 消息回调函数
+   * @returns {function} 取消订阅的函数
+   */
+  function subscribeToTopic(topic, callback) {
+    // 订阅主题（使用realtimeAdapter的动态订阅功能）
+    realtimeAdapter.subscribe(topic)
+
+    // 注册数据监听器
+    const dataHandler = (message) => {
+      // 只处理匹配的主题
+      if (message.topic === topic) {
+        callback(message)
+      }
+    }
+
+    // 监听data事件（支持多个监听器）
+    realtimeAdapter.on('data', dataHandler)
+
+    // 返回取消订阅函数
+    return () => {
+      realtimeAdapter.unsubscribe(topic)
+      realtimeAdapter.off('data', dataHandler)
+    }
+  }
+
   return {
     strategies,
     currentStrategy,
@@ -103,6 +132,7 @@ export const useStrategyStore = defineStore('strategy', () => {
     startStrategy,
     stopStrategy,
     deleteStrategy,
-    fetchOverview
+    fetchOverview,
+    subscribeToTopic
   }
 })

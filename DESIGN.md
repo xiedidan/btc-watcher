@@ -360,9 +360,676 @@ class StrategyManager:
         return True
 ```
 
-### 2.4 通知系统设计
+#### 2.3.3 策略日志心跳监控服务
 
-#### 2.4.1 通知适配器
+**设计目标**:
+- 实时监控FreqTrade策略进程的日志输出
+- 检测心跳日志，判断策略进程是否正常运行
+- 心跳超时时发送告警通知
+- 支持配置自动重启（可选功能，默认开启）
+- 记录心跳异常和重启历史
+
+**心跳日志格式**:
+```
+2025-11-04 21:19:01,013 - freqtrade.worker - INFO - Bot heartbeat. PID=872423, version='2025.9.1', state='RUNNING'
+```
+
+**日志监控服务设计**:
+
+```python
+import asyncio
+import re
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+
+class StrategyHeartbeatMonitor:
+    """策略心跳监控服务"""
+
+    # 心跳日志正则表达式
+    HEARTBEAT_PATTERN = re.compile(
+        r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ - freqtrade\.worker - INFO - '
+        r'Bot heartbeat\. PID=(\d+), version=\'([^\']+)\', state=\'(\w+)\''
+    )
+
+    def __init__(
+        self,
+        strategy_manager,
+        notify_hub,
+        check_interval: int = 30,  # 检查间隔（秒）
+        default_timeout: int = 300  # 默认超时时间（秒，5分钟）
+    ):
+        """
+        初始化心跳监控服务
+
+        Args:
+            strategy_manager: 策略管理器实例
+            notify_hub: 通知中心实例
+            check_interval: 心跳检查间隔（秒）
+            default_timeout: 默认心跳超时时间（秒）
+        """
+        self.strategy_manager = strategy_manager
+        self.notify_hub = notify_hub
+        self.check_interval = check_interval
+        self.default_timeout = default_timeout
+
+        # 存储每个策略的心跳状态
+        self.heartbeat_status: Dict[int, HeartbeatStatus] = {}
+
+        # 监控任务
+        self.monitor_task: Optional[asyncio.Task] = None
+        self.running = False
+
+    async def start(self):
+        """启动心跳监控服务"""
+        if self.running:
+            logger.warning("Heartbeat monitor already running")
+            return
+
+        self.running = True
+        self.monitor_task = asyncio.create_task(self._monitor_loop())
+        logger.info("Heartbeat monitor started")
+
+    async def stop(self):
+        """停止心跳监控服务"""
+        self.running = False
+        if self.monitor_task:
+            self.monitor_task.cancel()
+            try:
+                await self.monitor_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Heartbeat monitor stopped")
+
+    def register_strategy(
+        self,
+        strategy_id: int,
+        log_file_path: str,
+        timeout: Optional[int] = None
+    ):
+        """
+        注册需要监控的策略
+
+        Args:
+            strategy_id: 策略ID
+            log_file_path: 策略日志文件路径
+            timeout: 心跳超时时间（秒），None则使用默认值
+        """
+        self.heartbeat_status[strategy_id] = HeartbeatStatus(
+            strategy_id=strategy_id,
+            log_file_path=log_file_path,
+            timeout=timeout or self.default_timeout
+        )
+        logger.info(f"Registered strategy {strategy_id} for heartbeat monitoring")
+
+    def unregister_strategy(self, strategy_id: int):
+        """取消注册策略"""
+        if strategy_id in self.heartbeat_status:
+            del self.heartbeat_status[strategy_id]
+            logger.info(f"Unregistered strategy {strategy_id} from heartbeat monitoring")
+
+    def update_timeout(self, strategy_id: int, timeout: int):
+        """更新策略的心跳超时配置"""
+        if strategy_id in self.heartbeat_status:
+            self.heartbeat_status[strategy_id].timeout = timeout
+            logger.info(f"Updated timeout for strategy {strategy_id}: {timeout}s")
+
+    async def _monitor_loop(self):
+        """心跳监控主循环"""
+        while self.running:
+            try:
+                await self._check_all_strategies()
+                await asyncio.sleep(self.check_interval)
+            except Exception as e:
+                logger.error(f"Error in heartbeat monitor loop: {e}", exc_info=True)
+                await asyncio.sleep(self.check_interval)
+
+    async def _check_all_strategies(self):
+        """检查所有策略的心跳状态"""
+        for strategy_id, status in list(self.heartbeat_status.items()):
+            try:
+                await self._check_strategy_heartbeat(strategy_id, status)
+            except Exception as e:
+                logger.error(
+                    f"Error checking heartbeat for strategy {strategy_id}: {e}",
+                    exc_info=True
+                )
+
+    async def _check_strategy_heartbeat(
+        self,
+        strategy_id: int,
+        status: 'HeartbeatStatus'
+    ):
+        """检查单个策略的心跳状态"""
+        # 读取日志文件，查找最新的心跳记录
+        latest_heartbeat = await self._read_latest_heartbeat(status.log_file_path)
+
+        if latest_heartbeat:
+            # 更新心跳时间
+            status.last_heartbeat_time = latest_heartbeat['timestamp']
+            status.last_pid = latest_heartbeat['pid']
+            status.last_version = latest_heartbeat['version']
+            status.last_state = latest_heartbeat['state']
+            status.consecutive_failures = 0
+
+            # 检查心跳是否超时
+            time_since_heartbeat = (datetime.now() - status.last_heartbeat_time).total_seconds()
+
+            if time_since_heartbeat > status.timeout:
+                # 心跳超时
+                await self._handle_heartbeat_timeout(strategy_id, status, time_since_heartbeat)
+            else:
+                # 心跳正常
+                if status.is_abnormal:
+                    # 从异常状态恢复
+                    await self._handle_heartbeat_recovered(strategy_id, status)
+        else:
+            # 没有读取到心跳记录
+            if status.last_heartbeat_time:
+                time_since_heartbeat = (datetime.now() - status.last_heartbeat_time).total_seconds()
+                if time_since_heartbeat > status.timeout:
+                    await self._handle_heartbeat_timeout(strategy_id, status, time_since_heartbeat)
+
+    async def _read_latest_heartbeat(self, log_file_path: str) -> Optional[dict]:
+        """
+        读取日志文件中最新的心跳记录
+
+        Returns:
+            心跳信息字典，包含 timestamp, pid, version, state
+        """
+        try:
+            log_path = Path(log_file_path)
+            if not log_path.exists():
+                return None
+
+            # 读取日志文件最后N行（避免读取整个大文件）
+            last_lines = await self._read_last_lines(log_path, lines=100)
+
+            # 从后往前查找心跳日志
+            for line in reversed(last_lines):
+                match = self.HEARTBEAT_PATTERN.search(line)
+                if match:
+                    timestamp_str, pid, version, state = match.groups()
+                    return {
+                        'timestamp': datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S'),
+                        'pid': int(pid),
+                        'version': version,
+                        'state': state
+                    }
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error reading heartbeat from {log_file_path}: {e}")
+            return None
+
+    async def _read_last_lines(self, file_path: Path, lines: int = 100) -> list:
+        """读取文件的最后N行"""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                # 使用简单的方法读取最后N行
+                return f.readlines()[-lines:]
+        except Exception as e:
+            logger.error(f"Error reading file {file_path}: {e}")
+            return []
+
+    async def _handle_heartbeat_timeout(
+        self,
+        strategy_id: int,
+        status: 'HeartbeatStatus',
+        time_since_heartbeat: float
+    ):
+        """处理心跳超时"""
+        status.consecutive_failures += 1
+        status.is_abnormal = True
+
+        logger.warning(
+            f"Strategy {strategy_id} heartbeat timeout: "
+            f"{time_since_heartbeat:.0f}s since last heartbeat "
+            f"(timeout: {status.timeout}s, failures: {status.consecutive_failures})"
+        )
+
+        # 发送告警通知
+        await self.notify_hub.notify(
+            user_id=1,  # 管理员
+            title=f"🚨 策略心跳超时告警",
+            message=(
+                f"策略 #{strategy_id} 心跳超时\n"
+                f"最后心跳时间: {status.last_heartbeat_time.strftime('%Y-%m-%d %H:%M:%S') if status.last_heartbeat_time else '无'}\n"
+                f"超时时长: {time_since_heartbeat:.0f}秒\n"
+                f"配置超时: {status.timeout}秒\n"
+                f"连续失败次数: {status.consecutive_failures}"
+            ),
+            notification_type="alert",
+            priority="P2",  # 高优先级
+            metadata={
+                "strategy_id": strategy_id,
+                "time_since_heartbeat": time_since_heartbeat,
+                "timeout": status.timeout,
+                "consecutive_failures": status.consecutive_failures
+            },
+            strategy_id=strategy_id
+        )
+
+        # 尝试重启策略
+        try:
+            logger.info(f"Attempting to restart strategy {strategy_id}")
+            success = await self.strategy_manager.restart_strategy(strategy_id)
+
+            if success:
+                # 重置心跳状态
+                status.last_restart_time = datetime.now()
+                status.restart_count += 1
+
+                logger.info(f"Strategy {strategy_id} restarted successfully")
+
+                # 发送重启成功通知
+                await self.notify_hub.notify(
+                    user_id=1,
+                    title=f"✅ 策略已自动重启",
+                    message=(
+                        f"策略 #{strategy_id} 因心跳超时已自动重启\n"
+                        f"重启次数: {status.restart_count}\n"
+                        f"重启时间: {status.last_restart_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    ),
+                    notification_type="info",
+                    priority="P1",
+                    metadata={
+                        "strategy_id": strategy_id,
+                        "restart_count": status.restart_count
+                    },
+                    strategy_id=strategy_id
+                )
+            else:
+                logger.error(f"Failed to restart strategy {strategy_id}")
+
+                # 发送重启失败通知
+                await self.notify_hub.notify(
+                    user_id=1,
+                    title=f"❌ 策略重启失败",
+                    message=f"策略 #{strategy_id} 自动重启失败，请手动检查",
+                    notification_type="alert",
+                    priority="P2",
+                    metadata={"strategy_id": strategy_id},
+                    strategy_id=strategy_id
+                )
+
+        except Exception as e:
+            logger.error(f"Error restarting strategy {strategy_id}: {e}", exc_info=True)
+
+    async def _handle_heartbeat_recovered(self, strategy_id: int, status: 'HeartbeatStatus'):
+        """处理心跳恢复正常"""
+        status.is_abnormal = False
+
+        logger.info(f"Strategy {strategy_id} heartbeat recovered")
+
+        # 发送恢复通知
+        await self.notify_hub.notify(
+            user_id=1,
+            title=f"✅ 策略心跳恢复正常",
+            message=(
+                f"策略 #{strategy_id} 心跳已恢复正常\n"
+                f"最后心跳: {status.last_heartbeat_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"状态: {status.last_state}"
+            ),
+            notification_type="info",
+            priority="P1",
+            metadata={
+                "strategy_id": strategy_id,
+                "last_heartbeat": status.last_heartbeat_time.isoformat()
+            },
+            strategy_id=strategy_id
+        )
+
+    def get_heartbeat_status(self, strategy_id: int) -> Optional[dict]:
+        """获取策略的心跳状态"""
+        if strategy_id not in self.heartbeat_status:
+            return None
+
+        status = self.heartbeat_status[strategy_id]
+        return {
+            "strategy_id": strategy_id,
+            "last_heartbeat_time": status.last_heartbeat_time.isoformat() if status.last_heartbeat_time else None,
+            "last_pid": status.last_pid,
+            "last_version": status.last_version,
+            "last_state": status.last_state,
+            "timeout": status.timeout,
+            "is_abnormal": status.is_abnormal,
+            "consecutive_failures": status.consecutive_failures,
+            "restart_count": status.restart_count,
+            "last_restart_time": status.last_restart_time.isoformat() if status.last_restart_time else None
+        }
+
+
+class HeartbeatStatus:
+    """心跳状态数据类"""
+
+    def __init__(self, strategy_id: int, log_file_path: str, timeout: int):
+        self.strategy_id = strategy_id
+        self.log_file_path = log_file_path
+        self.timeout = timeout
+
+        # 心跳状态
+        self.last_heartbeat_time: Optional[datetime] = None
+        self.last_pid: Optional[int] = None
+        self.last_version: Optional[str] = None
+        self.last_state: Optional[str] = None
+
+        # 异常状态
+        self.is_abnormal = False
+        self.consecutive_failures = 0
+
+        # 重启记录
+        self.restart_count = 0
+        self.last_restart_time: Optional[datetime] = None
+```
+
+**数据库表设计** (添加到现有数据库设计中):
+
+```sql
+-- 策略心跳监控配置表
+CREATE TABLE strategy_heartbeat_configs (
+    id SERIAL PRIMARY KEY,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
+    enabled BOOLEAN DEFAULT true,
+    timeout_seconds INTEGER DEFAULT 300,
+    check_interval_seconds INTEGER DEFAULT 30,
+    auto_restart BOOLEAN DEFAULT true,
+    max_restart_attempts INTEGER DEFAULT 3,
+    restart_cooldown_seconds INTEGER DEFAULT 60,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(strategy_id)
+);
+
+-- 策略心跳历史记录表
+CREATE TABLE strategy_heartbeat_history (
+    id BIGSERIAL PRIMARY KEY,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
+    heartbeat_time TIMESTAMP NOT NULL,
+    pid INTEGER,
+    version VARCHAR(50),
+    state VARCHAR(20),
+    is_timeout BOOLEAN DEFAULT false,
+    time_since_last_heartbeat_seconds INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 策略重启历史记录表
+CREATE TABLE strategy_restart_history (
+    id BIGSERIAL PRIMARY KEY,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
+    restart_reason VARCHAR(50) NOT NULL,  -- heartbeat_timeout, manual, error
+    restart_time TIMESTAMP NOT NULL,
+    restart_success BOOLEAN,
+    error_message TEXT,
+    previous_pid INTEGER,
+    new_pid INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建索引
+CREATE INDEX idx_heartbeat_history_strategy_time ON strategy_heartbeat_history(strategy_id, heartbeat_time DESC);
+CREATE INDEX idx_restart_history_strategy_time ON strategy_restart_history(strategy_id, restart_time DESC);
+```
+
+**使用示例**:
+
+```python
+# 初始化心跳监控服务
+heartbeat_monitor = StrategyHeartbeatMonitor(
+    strategy_manager=strategy_manager,
+    notify_hub=notify_hub,
+    check_interval=30,  # 每30秒检查一次
+    default_timeout=300  # 默认5分钟超时
+)
+
+# 启动监控服务
+await heartbeat_monitor.start()
+
+# 启动策略时注册心跳监控
+strategy_id = 123
+log_file_path = f"/app/logs/strategy_{strategy_id}.log"
+heartbeat_monitor.register_strategy(
+    strategy_id=strategy_id,
+    log_file_path=log_file_path,
+    timeout=300  # 5分钟超时
+)
+
+# 停止策略时取消注册
+heartbeat_monitor.unregister_strategy(strategy_id)
+
+# 获取心跳状态
+status = heartbeat_monitor.get_heartbeat_status(strategy_id)
+```
+
+### 2.4 NotifyHub 通知中心设计
+
+#### 2.4.1 NotifyHub 架构总览
+
+NotifyHub是一个统一的通知管理中心，提供集中式的通知路由、频率控制、优先级管理和多渠道分发功能。
+
+```
+业务代码                   NotifyHub核心                    通知渠道
+┌──────────┐            ┌─────────────────┐           ┌────────────┐
+│ 策略引擎  │───────────▶│                 │──────────▶│  Telegram  │
+├──────────┤            │  NotifyHub      │           ├────────────┤
+│ 系统监控  │───────────▶│                 │──────────▶│  Discord   │
+├──────────┤            │  - 路由规则      │           ├────────────┤
+│ 告警模块  │───────────▶│  - 优先级管理   │──────────▶│  企业微信   │
+├──────────┤            │  - 频率控制      │           ├────────────┤
+│ 数据同步  │───────────▶│  - 时间规则      │──────────▶│   飞书     │
+└──────────┘            │  - 批量发送      │           ├────────────┤
+                        │  - 模板渲染      │──────────▶│   邮件     │
+                        └─────────────────┘           ├────────────┤
+                                 │                     │   短信     │
+                                 ▼                     └────────────┘
+                        ┌─────────────────┐
+                        │ 通知历史记录      │
+                        │ (PostgreSQL)    │
+                        └─────────────────┘
+```
+
+**核心特性**：
+- ✅ **统一入口**：业务代码只需调用一个API发送通知
+- ✅ **智能路由**：根据用户配置自动选择通知渠道
+- ✅ **优先级管理**：P0(最高)/P1(中)/P2(低)三级优先级
+- ✅ **频率控制**：防止通知轰炸，支持按优先级配置发送间隔
+- ✅ **时间规则**：勿扰时段、工作时间、周末模式、假期模式
+- ✅ **批量发送**：低优先级通知自动批量合并
+- ✅ **模板系统**：支持自定义通知模板
+- ✅ **失败重试**：自动重试失败的通知
+
+#### 2.4.2 优先级定义
+
+```python
+# 优先级级别定义
+P0 = "P0"  # 最低优先级 - 批量发送
+P1 = "P1"  # 中等优先级 - 限频发送
+P2 = "P2"  # 最高优先级 - 立即发送
+
+# 使用场景示例
+优先级映射 = {
+    "系统崩溃": P2,
+    "策略异常停止": P2,
+    "强买入信号(strength>=80%)": P2,
+
+    "中等买入信号(50%<=strength<80%)": P1,
+    "策略状态变化": P1,
+    "代理连接失败": P1,
+
+    "弱买入信号(strength<50%)": P0,
+    "策略心跳": P0,
+    "数据同步完成": P0
+}
+```
+
+#### 2.4.3 通知路由规则引擎
+
+```python
+class NotifyRouter:
+    """通知路由器 - 根据规则决定通知去向"""
+
+    async def route(self, notification: NotificationMessage) -> List[str]:
+        """
+        根据通知内容和用户配置决定发送渠道
+
+        Returns:
+            List[str]: 应该发送的渠道列表，如 ["telegram", "feishu"]
+        """
+        channels = []
+
+        # 获取用户的渠道配置
+        user_channels = await self._get_user_channel_configs(notification.user_id)
+
+        for channel_config in user_channels:
+            # 检查渠道是否启用
+            if not channel_config.enabled:
+                continue
+
+            # 检查渠道是否支持该优先级
+            if notification.priority not in channel_config.supported_priorities:
+                continue
+
+            # 检查频率限制
+            if not await self._check_rate_limit(channel_config, notification):
+                continue
+
+            # 检查时间规则
+            if not await self._check_time_rules(channel_config, notification):
+                continue
+
+            channels.append(channel_config.channel_type)
+
+        return channels
+```
+
+#### 2.4.4 频率控制器
+
+```python
+class FrequencyController:
+    """频率控制器 - 防止通知轰炸"""
+
+    def __init__(self):
+        self.last_send_time = {}  # 记录每个渠道的最后发送时间
+        self.p0_batch_buffer = {}  # P0通知批量缓冲区
+
+    async def should_send(
+        self,
+        user_id: int,
+        channel: str,
+        priority: str,
+        frequency_config: NotificationFrequencyLimit
+    ) -> bool:
+        """
+        判断是否应该发送通知
+
+        规则：
+        - P2: 立即发送，无限制
+        - P1: 检查最小发送间隔（默认60秒）
+        - P0: 加入批量队列，定时批量发送（默认5分钟）
+        """
+        if priority == "P2":
+            return True  # 最高优先级，立即发送
+
+        if priority == "P1":
+            # 检查距离上次发送的时间间隔
+            last_time = self.last_send_time.get((user_id, channel), 0)
+            current_time = time.time()
+
+            if current_time - last_time >= frequency_config.p1_min_interval:
+                self.last_send_time[(user_id, channel)] = current_time
+                return True
+            return False
+
+        if priority == "P0":
+            # P0消息加入批量队列
+            if frequency_config.p0_batch_enabled:
+                return False  # 暂不发送，等待批量
+            return True  # 禁用批量则正常发送
+
+    async def flush_batch_queue(self, user_id: int, channel: str):
+        """批量发送P0通知队列"""
+        batch_key = (user_id, channel)
+        if batch_key not in self.p0_batch_buffer:
+            return
+
+        notifications = self.p0_batch_buffer[batch_key]
+        if not notifications:
+            return
+
+        # 合并多条P0通知为一条
+        merged_message = self._merge_p0_notifications(notifications)
+        await self._send_notification(channel, merged_message)
+
+        # 清空队列
+        self.p0_batch_buffer[batch_key] = []
+```
+
+#### 2.4.5 时间规则管理器
+
+```python
+class TimeRuleManager:
+    """时间规则管理器 - 管理勿扰时段、工作时间等"""
+
+    async def should_send_at_current_time(
+        self,
+        time_rule: NotificationTimeRule,
+        priority: str
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        检查当前时间是否应该发送通知
+
+        Returns:
+            (should_send, reason)
+        """
+        now = datetime.now()
+
+        # 1. 勿扰时段检查
+        if time_rule.quiet_hours_enabled:
+            if self._is_in_quiet_hours(now, time_rule):
+                # 勿扰时段只发送高优先级通知
+                if priority < time_rule.quiet_priority_filter:
+                    return False, "quiet_hours"
+
+        # 2. 工作时间检查
+        if time_rule.working_hours_enabled:
+            if not self._is_in_working_hours(now, time_rule):
+                return False, "outside_working_hours"
+
+        # 3. 周末模式检查
+        if time_rule.weekend_mode_enabled:
+            if self._is_weekend(now):
+                # 周末降级P1到P0
+                if time_rule.weekend_downgrade_p1_to_p0 and priority == "P1":
+                    return False, "weekend_downgrade"
+
+        # 4. 假期模式检查
+        if time_rule.holiday_mode_enabled:
+            if self._is_holiday(now, time_rule.holiday_dates):
+                return False, "holiday"
+
+        return True, None
+
+    def _is_in_quiet_hours(self, now: datetime, rule: NotificationTimeRule) -> bool:
+        """检查是否在勿扰时段"""
+        current_time = now.time()
+        start_time = datetime.strptime(rule.quiet_start_time, "%H:%M").time()
+        end_time = datetime.strptime(rule.quiet_end_time, "%H:%M").time()
+
+        if start_time < end_time:
+            # 正常时间段：如 09:00 - 18:00
+            return start_time <= current_time <= end_time
+        else:
+            # 跨天时间段：如 22:00 - 08:00
+            return current_time >= start_time or current_time <= end_time
+```
+
+#### 2.4.6 通知渠道适配器
+
 ```python
 from abc import ABC, abstractmethod
 from typing import Dict, Any
@@ -371,47 +1038,478 @@ class NotificationChannel(ABC):
     """通知渠道抽象基类"""
 
     @abstractmethod
-    async def send(self, message: str, metadata: Dict[str, Any] = None) -> bool:
+    async def send(
+        self,
+        message: str,
+        title: str = None,
+        metadata: Dict[str, Any] = None
+    ) -> bool:
+        """发送通知"""
+        pass
+
+    @abstractmethod
+    async def test_connection(self) -> bool:
+        """测试渠道连接"""
         pass
 
 class TelegramChannel(NotificationChannel):
+    """Telegram Bot 通知渠道"""
+
     def __init__(self, bot_token: str, chat_id: str):
         self.bot_token = bot_token
         self.chat_id = chat_id
 
-    async def send(self, message: str, metadata: Dict[str, Any] = None) -> bool:
-        # Telegram Bot API 实现
-        pass
+    async def send(self, message: str, title: str = None, metadata: Dict = None) -> bool:
+        """发送Telegram消息"""
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
 
-class WeChatChannel(NotificationChannel):
-    # 微信通知实现
-    pass
+        # 格式化消息
+        formatted_message = f"**{title}**\n\n{message}" if title else message
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json={
+                    "chat_id": self.chat_id,
+                    "text": formatted_message,
+                    "parse_mode": "Markdown"
+                },
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                return response.status == 200
+
+class FeishuChannel(NotificationChannel):
+    """飞书 Webhook 通知渠道"""
+
+    def __init__(self, webhook_url: str):
+        self.webhook_url = webhook_url
+
+    async def send(self, message: str, title: str = None, metadata: Dict = None) -> bool:
+        """发送飞书消息"""
+        content = {
+            "msg_type": "interactive",
+            "card": {
+                "header": {
+                    "title": {
+                        "tag": "plain_text",
+                        "content": title or "通知"
+                    },
+                    "template": self._get_color_by_priority(metadata)
+                },
+                "elements": [
+                    {
+                        "tag": "div",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": message
+                        }
+                    }
+                ]
+            }
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.webhook_url, json=content) as response:
+                return response.status == 200
+
+class WeChatWorkChannel(NotificationChannel):
+    """企业微信通知渠道"""
+
+    def __init__(self, corp_id: str, corp_secret: str, agent_id: str):
+        self.corp_id = corp_id
+        self.corp_secret = corp_secret
+        self.agent_id = agent_id
+        self.access_token = None
+
+    async def send(self, message: str, title: str = None, metadata: Dict = None) -> bool:
+        """发送企业微信消息"""
+        # 获取access_token
+        if not self.access_token:
+            await self._refresh_access_token()
+
+        url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={self.access_token}"
+
+        content = {
+            "touser": "@all",
+            "msgtype": "text",
+            "agentid": self.agent_id,
+            "text": {
+                "content": f"{title}\n\n{message}" if title else message
+            }
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=content) as response:
+                return response.status == 200
+
+class DiscordChannel(NotificationChannel):
+    """Discord Bot 通知渠道"""
+
+    def __init__(self, webhook_url: str = None, bot_token: str = None, channel_id: str = None):
+        """
+        Discord通知渠道初始化
+
+        支持两种模式：
+        1. Webhook模式：只需要webhook_url
+        2. Bot模式：需要bot_token和channel_id
+        """
+        self.webhook_url = webhook_url
+        self.bot_token = bot_token
+        self.channel_id = channel_id
+
+    async def send(self, message: str, title: str = None, metadata: Dict = None) -> bool:
+        """发送Discord消息"""
+        if self.webhook_url:
+            return await self._send_via_webhook(message, title, metadata)
+        elif self.bot_token and self.channel_id:
+            return await self._send_via_bot(message, title, metadata)
+        else:
+            logger.error("Discord channel not properly configured")
+            return False
+
+    async def _send_via_webhook(self, message: str, title: str = None, metadata: Dict = None) -> bool:
+        """通过Webhook发送消息"""
+        # 构建Discord Embed消息
+        embed = {
+            "title": title or "通知",
+            "description": message,
+            "color": self._get_color_by_priority(metadata),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        # 添加元数据字段
+        if metadata:
+            fields = []
+            priority = metadata.get("priority", "P1")
+            notification_type = metadata.get("notification_type", "info")
+
+            fields.append({
+                "name": "优先级",
+                "value": f"**{priority}**",
+                "inline": True
+            })
+            fields.append({
+                "name": "类型",
+                "value": notification_type,
+                "inline": True
+            })
+
+            embed["fields"] = fields
+
+        payload = {
+            "embeds": [embed]
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                self.webhook_url,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                if response.status == 204:
+                    logger.info("Discord webhook notification sent successfully")
+                    return True
+                else:
+                    logger.error(f"Discord webhook error: {response.status}")
+                    return False
+
+    async def _send_via_bot(self, message: str, title: str = None, metadata: Dict = None) -> bool:
+        """通过Bot API发送消息"""
+        url = f"https://discord.com/api/v10/channels/{self.channel_id}/messages"
+
+        headers = {
+            "Authorization": f"Bot {self.bot_token}",
+            "Content-Type": "application/json"
+        }
+
+        # 构建Discord Embed消息
+        embed = {
+            "title": title or "通知",
+            "description": message,
+            "color": self._get_color_by_priority(metadata),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        payload = {
+            "embeds": [embed]
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                if response.status == 200:
+                    logger.info("Discord bot notification sent successfully")
+                    return True
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Discord bot error: {response.status}, {error_text}")
+                    return False
+
+    def _get_color_by_priority(self, metadata: Dict = None) -> int:
+        """根据优先级返回Discord颜色值"""
+        if not metadata:
+            return 0x3498db  # 默认蓝色
+
+        priority = metadata.get("priority", "P1")
+        notification_type = metadata.get("notification_type", "info")
+
+        # 根据优先级设置颜色
+        if priority == "P2":
+            return 0xe74c3c  # 红色（高优先级）
+        elif priority == "P1":
+            return 0xf39c12  # 橙色（中优先级）
+        elif priority == "P0":
+            return 0x95a5a6  # 灰色（低优先级）
+
+        # 根据通知类型设置颜色
+        if notification_type == "alert":
+            return 0xe74c3c  # 红色
+        elif notification_type == "signal":
+            return 0x2ecc71  # 绿色
+        elif notification_type == "info":
+            return 0x3498db  # 蓝色
+
+        return 0x3498db  # 默认蓝色
+
+    async def test_connection(self) -> bool:
+        """测试Discord连接"""
+        test_message = "🔔 Discord通知测试\n\n这是一条测试消息，用于验证Discord通知渠道配置是否正确。"
+        return await self.send(test_message, "测试通知", {"priority": "P1", "notification_type": "info"})
 
 class EmailChannel(NotificationChannel):
-    # 邮件通知实现
-    pass
+    """邮件通知渠道"""
+
+    def __init__(self, smtp_host: str, smtp_port: int, smtp_user: str, smtp_password: str, from_email: str):
+        self.smtp_host = smtp_host
+        self.smtp_port = smtp_port
+        self.smtp_user = smtp_user
+        self.smtp_password = smtp_password
+        self.from_email = from_email
+
+    async def send(self, message: str, title: str = None, metadata: Dict = None) -> bool:
+        """发送邮件通知"""
+        # 邮件实现
+        pass
+
+class SMSChannel(NotificationChannel):
+    """短信通知渠道"""
+
+    def __init__(self, api_key: str, api_secret: str, phone_numbers: list):
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.phone_numbers = phone_numbers
+
+    async def send(self, message: str, title: str = None, metadata: Dict = None) -> bool:
+        """发送短信通知"""
+        # 短信实现
+        pass
 ```
 
-#### 2.4.2 通知服务
+#### 2.4.7 NotifyHub 核心服务
+
 ```python
-class NotificationService:
+class NotifyHub:
+    """
+    NotifyHub 通知中心
+
+    统一的通知入口，业务代码只需要调用 notify() 方法
+    """
+
     def __init__(self):
-        self.channels = {}
+        self.router = NotifyRouter()
+        self.frequency_controller = FrequencyController()
+        self.time_rule_manager = TimeRuleManager()
+        self.channels: Dict[str, NotificationChannel] = {}
+        self.queue = asyncio.Queue()
+        self.worker_task = None
 
-    def register_channel(self, name: str, channel: NotificationChannel):
-        self.channels[name] = channel
+    async def notify(
+        self,
+        user_id: int,
+        title: str,
+        message: str,
+        notification_type: str,
+        priority: str = "P1",
+        metadata: Dict = None,
+        strategy_id: int = None,
+        signal_id: int = None
+    ) -> bool:
+        """
+        发送通知 - 统一入口
 
-    async def send_signal_notification(self, signal: dict):
-        """发送信号通知"""
-        message = self.format_signal_message(signal)
+        Args:
+            user_id: 用户ID
+            title: 通知标题
+            message: 通知内容
+            notification_type: 通知类型 (signal/alert/info/system)
+            priority: 优先级 (P0/P1/P2)
+            metadata: 元数据
+            strategy_id: 关联的策略ID（可选）
+            signal_id: 关联的信号ID（可选）
 
-        # 并发发送到所有激活的通知渠道
-        tasks = []
-        for name, channel in self.channels.items():
-            tasks.append(channel.send(message, signal))
+        Returns:
+            bool: 是否成功加入发送队列
 
-        await asyncio.gather(*tasks)
+        使用示例:
+            # 业务代码中发送通知
+            await notify_hub.notify(
+                user_id=1,
+                title="强买入信号",
+                message="BTC/USDT 出现强买入信号，信号强度85%",
+                notification_type="signal",
+                priority="P2",  # 最高优先级，立即发送
+                metadata={"pair": "BTC/USDT", "strength": 0.85},
+                strategy_id=10,
+                signal_id=12345
+            )
+        """
+        notification_data = {
+            "user_id": user_id,
+            "title": title,
+            "message": message,
+            "notification_type": notification_type,
+            "priority": priority,
+            "metadata": metadata or {},
+            "strategy_id": strategy_id,
+            "signal_id": signal_id,
+            "created_at": datetime.now()
+        }
+
+        await self.queue.put(notification_data)
+        logger.debug(f"Notification queued for user {user_id}, priority={priority}")
+        return True
+
+    async def _notification_worker(self):
+        """通知工作线程 - 处理队列中的通知"""
+        while True:
+            try:
+                notification_data = await self.queue.get()
+
+                # 1. 路由：决定发送到哪些渠道
+                channels = await self.router.route(notification_data)
+
+                if not channels:
+                    logger.info(f"No channels selected for notification (user={notification_data['user_id']})")
+                    continue
+
+                # 2. 为每个渠道发送通知
+                for channel_type in channels:
+                    await self._send_to_channel(channel_type, notification_data)
+
+                self.queue.task_done()
+
+            except Exception as e:
+                logger.error(f"Error in notification worker: {e}", exc_info=True)
+
+    async def _send_to_channel(self, channel_type: str, notification_data: Dict):
+        """发送通知到指定渠道"""
+        try:
+            # 创建通知历史记录
+            history_id = await self._create_notification_history(
+                channel_type,
+                notification_data
+            )
+
+            # 获取渠道实例
+            channel = self.channels.get(channel_type)
+            if not channel:
+                logger.error(f"Channel {channel_type} not found")
+                await self._update_history_status(history_id, "failed", "Channel not found")
+                return
+
+            # 渲染通知模板
+            formatted_message = await self._render_template(channel_type, notification_data)
+
+            # 发送通知
+            success = await channel.send(
+                message=formatted_message,
+                title=notification_data["title"],
+                metadata=notification_data["metadata"]
+            )
+
+            # 更新通知状态
+            status = "sent" if success else "failed"
+            await self._update_history_status(history_id, status)
+
+            logger.info(f"Notification {status} via {channel_type} (history_id={history_id})")
+
+        except Exception as e:
+            logger.error(f"Failed to send notification via {channel_type}: {e}", exc_info=True)
+            await self._update_history_status(history_id, "failed", str(e))
+
+# 全局单例
+notify_hub = NotifyHub()
 ```
+
+#### 2.4.8 使用示例
+
+```python
+# ===== 业务代码中使用NotifyHub =====
+
+# 示例1: 策略引擎发送交易信号通知
+async def on_new_signal(signal_data: Dict):
+    """当产生新交易信号时"""
+    strength = signal_data['signal_strength']
+
+    # 根据信号强度决定优先级
+    if strength >= 0.8:
+        priority = "P2"  # 强信号，立即发送
+    elif strength >= 0.5:
+        priority = "P1"  # 中等信号，限频发送
+    else:
+        priority = "P0"  # 弱信号，批量发送
+
+    await notify_hub.notify(
+        user_id=signal_data['user_id'],
+        title=f"📊 {signal_data['action']} 信号: {signal_data['pair']}",
+        message=f"信号强度: {strength:.1%}\n价格: ${signal_data['price']:.2f}",
+        notification_type="signal",
+        priority=priority,
+        metadata=signal_data,
+        strategy_id=signal_data['strategy_id'],
+        signal_id=signal_data['signal_id']
+    )
+
+# 示例2: 系统监控模块发送告警
+async def on_strategy_error(strategy_id: int, error_message: str):
+    """当策略异常时"""
+    await notify_hub.notify(
+        user_id=1,  # 管理员
+        title="🚨 策略异常告警",
+        message=f"策略 #{strategy_id} 运行异常\n错误: {error_message}",
+        notification_type="alert",
+        priority="P2",  # 系统告警，最高优先级
+        metadata={"strategy_id": strategy_id, "error": error_message},
+        strategy_id=strategy_id
+    )
+
+# 示例3: 数据同步模块发送完成通知
+async def on_sync_completed(sync_stats: Dict):
+    """数据同步完成"""
+    await notify_hub.notify(
+        user_id=1,
+        title="✅ 数据同步完成",
+        message=f"同步了 {sync_stats['records']} 条记录",
+        notification_type="info",
+        priority="P0",  # 信息类通知，低优先级
+        metadata=sync_stats
+    )
+```
+
+#### 2.4.9 数据库表设计
+
+NotifyHub 相关的数据库表在 `models/notification.py` 中已定义：
+
+- `notification_channel_configs`: 通知渠道配置表
+- `notification_frequency_limits`: 通知频率限制配置表
+- `notification_time_rules`: 通知时间规则配置表
+- `notification_history`: 通知历史记录表
+
+详见 **2.1.4 信号和通知表** 部分。
 
 ### 2.5 前端组件设计
 

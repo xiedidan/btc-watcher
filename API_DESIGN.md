@@ -189,6 +189,227 @@ Token刷新接口
 
 ---
 
+### 2.3.1 策略心跳监控接口
+
+#### GET /api/v1/strategies/{strategy_id}/heartbeat
+获取策略心跳状态
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "strategy_id": 123,
+    "last_heartbeat_time": "2024-01-15T14:25:30Z",
+    "last_pid": 872423,
+    "last_version": "2025.9.1",
+    "last_state": "RUNNING",
+    "timeout_seconds": 300,
+    "is_abnormal": false,
+    "consecutive_failures": 0,
+    "restart_count": 2,
+    "last_restart_time": "2024-01-15T10:00:00Z",
+    "time_since_last_heartbeat_seconds": 45
+  }
+}
+```
+
+#### GET /api/v1/strategies/{strategy_id}/heartbeat/config
+获取策略心跳监控配置
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "strategy_id": 123,
+    "enabled": true,
+    "timeout_seconds": 300,
+    "check_interval_seconds": 30,
+    "auto_restart": true,
+    "max_restart_attempts": 3,
+    "restart_cooldown_seconds": 60,
+    "created_at": "2024-01-10T10:00:00Z",
+    "updated_at": "2024-01-15T14:25:30Z"
+  }
+}
+```
+
+#### PUT /api/v1/strategies/{strategy_id}/heartbeat/config
+更新策略心跳监控配置
+
+**请求体**:
+```json
+{
+  "enabled": true,
+  "timeout_seconds": 600,
+  "check_interval_seconds": 30,
+  "auto_restart": true,
+  "max_restart_attempts": 5,
+  "restart_cooldown_seconds": 120
+}
+```
+
+**响应**: 同GET /api/v1/strategies/{strategy_id}/heartbeat/config
+
+#### GET /api/v1/strategies/{strategy_id}/heartbeat/history
+获取策略心跳历史记录
+
+**查询参数**:
+- `page`: 页码 (默认: 1)
+- `page_size`: 每页大小 (默认: 20)
+- `start_time`: 开始时间
+- `end_time`: 结束时间
+- `is_timeout`: 是否只查询超时记录 (true/false)
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "history": [
+      {
+        "id": 10001,
+        "strategy_id": 123,
+        "heartbeat_time": "2024-01-15T14:25:30Z",
+        "pid": 872423,
+        "version": "2025.9.1",
+        "state": "RUNNING",
+        "is_timeout": false,
+        "time_since_last_heartbeat_seconds": 45,
+        "created_at": "2024-01-15T14:25:31Z"
+      },
+      {
+        "id": 10000,
+        "strategy_id": 123,
+        "heartbeat_time": "2024-01-15T14:24:45Z",
+        "pid": 872423,
+        "version": "2025.9.1",
+        "state": "RUNNING",
+        "is_timeout": false,
+        "time_since_last_heartbeat_seconds": 60,
+        "created_at": "2024-01-15T14:24:46Z"
+      }
+    ]
+  },
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total": 1524,
+    "total_pages": 77
+  }
+}
+```
+
+#### GET /api/v1/strategies/{strategy_id}/restart/history
+获取策略重启历史记录
+
+**查询参数**:
+- `page`: 页码 (默认: 1)
+- `page_size`: 每页大小 (默认: 20)
+- `start_time`: 开始时间
+- `end_time`: 结束时间
+- `restart_reason`: 重启原因筛选 (heartbeat_timeout/manual/error)
+- `restart_success`: 重启结果筛选 (true/false)
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "history": [
+      {
+        "id": 501,
+        "strategy_id": 123,
+        "restart_reason": "heartbeat_timeout",
+        "restart_time": "2024-01-15T14:00:00Z",
+        "restart_success": true,
+        "error_message": null,
+        "previous_pid": 872400,
+        "new_pid": 872423,
+        "created_at": "2024-01-15T14:00:01Z"
+      },
+      {
+        "id": 500,
+        "strategy_id": 123,
+        "restart_reason": "manual",
+        "restart_time": "2024-01-15T10:00:00Z",
+        "restart_success": true,
+        "error_message": null,
+        "previous_pid": 872350,
+        "new_pid": 872400,
+        "created_at": "2024-01-15T10:00:01Z"
+      }
+    ]
+  },
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total": 45,
+    "total_pages": 3
+  }
+}
+```
+
+#### POST /api/v1/strategies/{strategy_id}/restart
+手动重启策略
+
+**请求体**:
+```json
+{
+  "reason": "manual",
+  "force": false
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "strategy_id": 123,
+    "restart_time": "2024-01-15T14:30:00Z",
+    "previous_pid": 872423,
+    "new_pid": 872450,
+    "restart_success": true
+  }
+}
+```
+
+#### GET /api/v1/system/heartbeat/summary
+获取所有策略的心跳监控概览
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "total_strategies": 5,
+    "healthy_strategies": 4,
+    "abnormal_strategies": 1,
+    "total_restarts_today": 3,
+    "strategies": [
+      {
+        "strategy_id": 123,
+        "strategy_name": "MA_Cross_BTC_Monitor",
+        "last_heartbeat_time": "2024-01-15T14:25:30Z",
+        "is_abnormal": false,
+        "time_since_last_heartbeat_seconds": 45
+      },
+      {
+        "strategy_id": 124,
+        "strategy_name": "RSI_ETH_Monitor",
+        "last_heartbeat_time": "2024-01-15T14:20:00Z",
+        "is_abnormal": true,
+        "time_since_last_heartbeat_seconds": 370
+      }
+    ]
+  }
+}
+```
+
+---
+
 ### 2.3 草稿管理接口
 
 #### GET /api/v1/strategies/drafts
@@ -392,34 +613,704 @@ Token刷新接口
 
 ---
 
-### 2.7 通知管理接口
+### 2.7 NotifyHub 通知中心接口
 
-#### GET /api/v1/notifications/channels
-获取通知渠道配置
+#### 2.7.1 通知渠道配置管理
 
-#### PUT /api/v1/notifications/channels
+##### GET /api/v1/notify/channels
+获取用户的通知渠道配置列表
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "channels": [
+      {
+        "id": 1,
+        "user_id": 1,
+        "channel_type": "telegram",
+        "channel_name": "Telegram Bot",
+        "enabled": true,
+        "priority": 1,
+        "supported_priorities": ["P0", "P1", "P2"],
+        "config": {
+          "bot_token": "123456:ABC***",
+          "chat_id": "987654321"
+        },
+        "rate_limit_enabled": true,
+        "max_notifications_per_hour": 60,
+        "max_notifications_per_day": 500,
+        "total_sent": 1234,
+        "total_failed": 12,
+        "last_sent_at": "2024-01-15T14:25:30Z",
+        "created_at": "2024-01-01T00:00:00Z"
+      },
+      {
+        "id": 2,
+        "channel_type": "feishu",
+        "channel_name": "飞书群组",
+        "enabled": true,
+        "priority": 2,
+        "supported_priorities": ["P1", "P2"],
+        "config": {
+          "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+        }
+      },
+      {
+        "id": 3,
+        "channel_type": "discord",
+        "channel_name": "Discord频道",
+        "enabled": true,
+        "priority": 3,
+        "supported_priorities": ["P0", "P1", "P2"],
+        "config": {
+          "webhook_url": "https://discord.com/api/webhooks/xxx/yyy"
+        },
+        "rate_limit_enabled": true,
+        "max_notifications_per_hour": 100,
+        "max_notifications_per_day": 1000
+      }
+    ]
+  }
+}
+```
+
+**Discord配置说明**:
+
+Discord支持两种配置模式：
+
+1. **Webhook模式**（推荐，配置简单）:
+```json
+{
+  "channel_type": "discord",
+  "config": {
+    "webhook_url": "https://discord.com/api/webhooks/123456789/abcdefg"
+  }
+}
+```
+
+2. **Bot模式**（更强大，需要Bot Token）:
+```json
+{
+  "channel_type": "discord",
+  "config": {
+    "bot_token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.GaBcDe.FgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRs",
+    "channel_id": "987654321098765432"
+  }
+}
+```
+
+**如何获取Discord Webhook URL**:
+1. 打开Discord服务器设置
+2. 选择"整合" → "Webhooks"
+3. 点击"新建Webhook"
+4. 设置名称和选择频道
+5. 复制Webhook URL
+
+**Discord消息特性**:
+- 使用Embed格式显示通知（更美观）
+- 根据优先级自动设置消息颜色：
+  - P2（高优先级）: 红色 (#e74c3c)
+  - P1（中优先级）: 橙色 (#f39c12)
+  - P0（低优先级）: 灰色 (#95a5a6)
+- 根据通知类型设置颜色：
+  - alert（告警）: 红色
+  - signal（交易信号）: 绿色
+  - info（信息）: 蓝色
+- 自动添加时间戳和元数据字段
+
+##### POST /api/v1/notify/channels
+创建新的通知渠道配置
+
+**请求体示例 - Discord Webhook**:
+```json
+{
+  "channel_type": "discord",
+  "channel_name": "Discord通知频道",
+  "enabled": true,
+  "priority": 1,
+  "supported_priorities": ["P0", "P1", "P2"],
+  "config": {
+    "webhook_url": "https://discord.com/api/webhooks/123456789/abcdefg"
+  },
+  "rate_limit_enabled": true,
+  "max_notifications_per_hour": 100,
+  "max_notifications_per_day": 1000
+}
+```
+
+**请求体示例 - Telegram**:
+```json
+{
+  "channel_type": "telegram",
+  "channel_name": "我的Telegram",
+  "enabled": true,
+  "priority": 1,
+  "supported_priorities": ["P0", "P1", "P2"],
+  "config": {
+    "bot_token": "123456:ABCDEFG",
+    "chat_id": "987654321"
+  },
+  "rate_limit_enabled": true,
+  "max_notifications_per_hour": 60,
+  "max_notifications_per_day": 500
+}
+```
+
+**支持的渠道类型**:
+- `telegram`: Telegram Bot
+- `discord`: Discord Bot/Webhook
+- `feishu`: 飞书 Webhook
+- `wechat`: 企业微信
+- `email`: 邮件
+- `sms`: 短信
+
+##### PUT /api/v1/notify/channels/{channel_id}
 更新通知渠道配置
 
-#### POST /api/v1/notifications/test
-测试通知发送
+##### DELETE /api/v1/notify/channels/{channel_id}
+删除通知渠道配置
+
+##### POST /api/v1/notify/channels/{channel_id}/test
+测试通知渠道连接
 
 **请求体**:
 ```json
 {
-  "channel": "sms",
-  "message": "测试消息"
+  "test_message": "这是一条测试消息"
 }
 ```
 
-#### GET /api/v1/notifications/history
-获取通知历史
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "test_result": "success",
+    "latency_ms": 256,
+    "sent_at": "2024-01-15T14:25:30Z",
+    "response_code": 200,
+    "error_message": null
+  }
+}
+```
+
+---
+
+#### 2.7.2 频率限制配置
+
+##### GET /api/v1/notify/frequency-limits
+获取用户的频率限制配置
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": 1,
+    "p2_min_interval": 0,
+    "p1_min_interval": 60,
+    "p0_batch_interval": 300,
+    "p0_batch_enabled": true,
+    "p0_batch_max_size": 10,
+    "enabled": true,
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-15T14:25:30Z"
+  }
+}
+```
+
+**字段说明**:
+- `p2_min_interval`: P2(最高优先级)最小发送间隔(秒)，0表示无限制
+- `p1_min_interval`: P1(中等优先级)最小发送间隔(秒)
+- `p0_batch_interval`: P0(低优先级)批量发送间隔(秒)
+- `p0_batch_enabled`: 是否启用P0批量发送
+- `p0_batch_max_size`: 每批最多合并通知数
+
+##### PUT /api/v1/notify/frequency-limits
+更新频率限制配置
+
+**请求体**:
+```json
+{
+  "p1_min_interval": 120,
+  "p0_batch_interval": 600,
+  "p0_batch_enabled": true,
+  "p0_batch_max_size": 20
+}
+```
+
+---
+
+#### 2.7.3 时间规则配置
+
+##### GET /api/v1/notify/time-rules
+获取用户的时间规则配置列表
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "time_rules": [
+      {
+        "id": 1,
+        "user_id": 1,
+        "rule_name": "工作日规则",
+        "enabled": true,
+        "quiet_hours_enabled": true,
+        "quiet_start_time": "22:00",
+        "quiet_end_time": "08:00",
+        "quiet_priority_filter": "P2",
+        "weekend_mode_enabled": true,
+        "weekend_downgrade_p1_to_p0": true,
+        "weekend_batch_p0": true,
+        "working_hours_enabled": false,
+        "working_start_time": "09:00",
+        "working_end_time": "18:00",
+        "working_days": [1, 2, 3, 4, 5],
+        "holiday_mode_enabled": false,
+        "holiday_dates": ["2024-01-01", "2024-02-10"],
+        "created_at": "2024-01-01T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+**字段说明**:
+- `quiet_hours_enabled`: 是否启用勿扰时段
+- `quiet_start_time`: 勿扰开始时间(HH:MM格式)
+- `quiet_end_time`: 勿扰结束时间
+- `quiet_priority_filter`: 勿扰时段只发送此优先级及以上的通知
+- `weekend_mode_enabled`: 是否启用周末模式
+- `weekend_downgrade_p1_to_p0`: 周末是否将P1降级为P0
+- `working_hours_enabled`: 是否启用工作时间限制
+- `working_days`: 工作日(1=Monday, 7=Sunday)
+- `holiday_mode_enabled`: 是否启用假期模式
+
+##### POST /api/v1/notify/time-rules
+创建新的时间规则
+
+##### PUT /api/v1/notify/time-rules/{rule_id}
+更新时间规则
+
+##### DELETE /api/v1/notify/time-rules/{rule_id}
+删除时间规则
+
+---
+
+#### 2.7.4 发送通知接口
+
+##### POST /api/v1/notify/send
+发送通知(通常由业务代码调用)
+
+**请求体**:
+```json
+{
+  "title": "强买入信号",
+  "message": "BTC/USDT 出现强买入信号\n信号强度: 85%\n当前价格: $42,500",
+  "notification_type": "signal",
+  "priority": "P2",
+  "metadata": {
+    "pair": "BTC/USDT",
+    "signal_strength": 0.85,
+    "price": 42500.00,
+    "action": "BUY"
+  },
+  "strategy_id": 10,
+  "signal_id": 12345
+}
+```
+
+**字段说明**:
+- `title`: 通知标题(必填)
+- `message`: 通知内容(必填)
+- `notification_type`: 通知类型 - signal/alert/info/system(必填)
+- `priority`: 优先级 - P0/P1/P2(默认P1)
+- `metadata`: 元数据(可选)
+- `strategy_id`: 关联的策略ID(可选)
+- `signal_id`: 关联的信号ID(可选)
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "queued": true,
+    "notification_id": "uuid",
+    "estimated_send_time": "2024-01-15T14:25:30Z",
+    "target_channels": ["telegram", "feishu"]
+  }
+}
+```
+
+##### POST /api/v1/notify/batch-send
+批量发送通知
+
+**请求体**:
+```json
+{
+  "notifications": [
+    {
+      "title": "通知1",
+      "message": "内容1",
+      "notification_type": "info",
+      "priority": "P0"
+    },
+    {
+      "title": "通知2",
+      "message": "内容2",
+      "notification_type": "info",
+      "priority": "P0"
+    }
+  ]
+}
+```
+
+---
+
+#### 2.7.5 通知历史查询
+
+##### GET /api/v1/notify/history
+获取通知历史记录
 
 **查询参数**:
-- `page`: 页码
-- `channel`: 通知渠道筛选
-- `status`: 发送状态筛选 (success/failed/pending)
+- `page`: 页码(默认: 1)
+- `page_size`: 每页大小(默认: 20)
+- `channel_type`: 按渠道类型筛选
+- `status`: 按状态筛选(sent/failed/pending/batched)
+- `notification_type`: 按通知类型筛选
+- `priority`: 按优先级筛选
 - `start_time`: 开始时间
 - `end_time`: 结束时间
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "history": [
+      {
+        "id": 1001,
+        "user_id": 1,
+        "title": "强买入信号",
+        "message": "BTC/USDT 出现强买入信号...",
+        "notification_type": "signal",
+        "priority": "P2",
+        "channel_type": "telegram",
+        "channel_config_id": 1,
+        "status": "sent",
+        "sent_at": "2024-01-15T14:25:30Z",
+        "error_message": null,
+        "signal_id": 12345,
+        "strategy_id": 10,
+        "extra_data": {
+          "pair": "BTC/USDT",
+          "strength": 0.85
+        },
+        "created_at": "2024-01-15T14:25:28Z"
+      }
+    ]
+  },
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total": 1234,
+    "total_pages": 62
+  }
+}
+```
+
+##### GET /api/v1/notify/history/{notification_id}
+获取单个通知历史详情
+
+---
+
+#### 2.7.6 通知统计接口
+
+##### GET /api/v1/notify/stats
+获取通知统计信息
+
+**查询参数**:
+- `period`: 统计周期(today/week/month/custom)
+- `start_date`: 自定义开始日期
+- `end_date`: 自定义结束日期
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "period": "today",
+    "total_notifications": 156,
+    "by_status": {
+      "sent": 145,
+      "failed": 8,
+      "pending": 3
+    },
+    "by_priority": {
+      "P2": 23,
+      "P1": 85,
+      "P0": 48
+    },
+    "by_channel": {
+      "telegram": 89,
+      "feishu": 67
+    },
+    "by_type": {
+      "signal": 120,
+      "alert": 15,
+      "info": 21
+    },
+    "success_rate": 0.949,
+    "avg_delivery_time_ms": 456,
+    "chart_data": {
+      "hourly": [
+        {"hour": "00:00", "count": 5},
+        {"hour": "01:00", "count": 3},
+        {"hour": "02:00", "count": 2}
+      ]
+    }
+  }
+}
+```
+
+##### GET /api/v1/notify/stats/channels
+获取各渠道的统计信息
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "channels": [
+      {
+        "channel_id": 1,
+        "channel_type": "telegram",
+        "channel_name": "Telegram Bot",
+        "total_sent": 1234,
+        "total_failed": 12,
+        "success_rate": 0.990,
+        "avg_latency_ms": 256,
+        "last_sent_at": "2024-01-15T14:25:30Z",
+        "last_error": null,
+        "last_error_at": null,
+        "daily_usage": {
+          "sent_today": 45,
+          "limit_per_day": 500,
+          "remaining": 455
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+#### 2.7.7 通知模板管理
+
+##### GET /api/v1/notify/templates
+获取通知模板列表
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "templates": [
+      {
+        "id": 1,
+        "name": "交易信号模板",
+        "notification_type": "signal",
+        "channel_type": "telegram",
+        "priority": "P2",
+        "template_content": "📊 **{{action}} 信号: {{pair}}**\n\n信号强度: {{strength}}\n当前价格: ${{price}}\n时间: {{timestamp}}",
+        "variables": ["action", "pair", "strength", "price", "timestamp"],
+        "enabled": true,
+        "created_at": "2024-01-01T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+##### POST /api/v1/notify/templates
+创建通知模板
+
+**请求体**:
+```json
+{
+  "name": "系统告警模板",
+  "notification_type": "alert",
+  "channel_type": "feishu",
+  "priority": "P2",
+  "template_content": "🚨 系统告警\n\n{{alert_title}}\n详情: {{alert_message}}\n时间: {{timestamp}}",
+  "variables": ["alert_title", "alert_message", "timestamp"],
+  "enabled": true
+}
+```
+
+##### PUT /api/v1/notify/templates/{template_id}
+更新通知模板
+
+##### DELETE /api/v1/notify/templates/{template_id}
+删除通知模板
+
+##### POST /api/v1/notify/templates/{template_id}/test
+测试通知模板
+
+**请求体**:
+```json
+{
+  "variables": {
+    "action": "BUY",
+    "pair": "BTC/USDT",
+    "strength": "85%",
+    "price": "42500.00",
+    "timestamp": "2024-01-15 14:25:30"
+  }
+}
+```
+
+---
+
+#### 2.7.8 通知规则管理
+
+##### GET /api/v1/notify/rules
+获取通知路由规则
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "rules": [
+      {
+        "id": 1,
+        "name": "强信号立即通知所有渠道",
+        "enabled": true,
+        "conditions": {
+          "notification_type": "signal",
+          "priority": "P2",
+          "metadata_filter": {
+            "signal_strength": {">=": 0.8}
+          }
+        },
+        "actions": {
+          "channels": ["telegram", "feishu", "sms"],
+          "override_frequency_limit": true
+        },
+        "priority": 1,
+        "created_at": "2024-01-01T00:00:00Z"
+      },
+      {
+        "id": 2,
+        "name": "弱信号仅Telegram批量发送",
+        "enabled": true,
+        "conditions": {
+          "notification_type": "signal",
+          "priority": "P0"
+        },
+        "actions": {
+          "channels": ["telegram"],
+          "force_batch": true
+        },
+        "priority": 2
+      }
+    ]
+  }
+}
+```
+
+##### POST /api/v1/notify/rules
+创建通知规则
+
+##### PUT /api/v1/notify/rules/{rule_id}
+更新通知规则
+
+##### DELETE /api/v1/notify/rules/{rule_id}
+删除通知规则
+
+##### PUT /api/v1/notify/rules/reorder
+调整规则优先级顺序
+
+**请求体**:
+```json
+{
+  "rule_ids": [3, 1, 2, 4]
+}
+```
+
+---
+
+#### 2.7.9 NotifyHub 系统管理
+
+##### GET /api/v1/notify/system/health
+NotifyHub健康检查
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "queue_size": 3,
+    "worker_status": "running",
+    "channels_health": {
+      "telegram": "healthy",
+      "feishu": "healthy",
+      "email": "degraded",
+      "sms": "unhealthy"
+    },
+    "last_error": null,
+    "uptime_seconds": 86400
+  }
+}
+```
+
+##### POST /api/v1/notify/system/flush-batch
+手动触发批量发送队列刷新
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "flushed_count": 15,
+    "channels_flushed": ["telegram", "feishu"]
+  }
+}
+```
+
+##### GET /api/v1/notify/system/queue
+查看当前通知队列状态
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "queue_size": 5,
+    "pending_notifications": [
+      {
+        "title": "通知1",
+        "priority": "P1",
+        "created_at": "2024-01-15T14:25:30Z",
+        "estimated_send_time": "2024-01-15T14:26:30Z"
+      }
+    ],
+    "batch_queues": {
+      "telegram": {
+        "p0_count": 8,
+        "next_flush_time": "2024-01-15T14:30:00Z"
+      }
+    }
+  }
+}
+```
 
 ---
 

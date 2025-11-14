@@ -75,6 +75,9 @@
         </div>
 
         <div class="header-right">
+          <!-- 连接状态 -->
+          <ConnectionStatus />
+
           <!-- 主题切换 -->
           <el-tooltip :content="$t(themeStore.theme === 'light' ? 'theme.switchToDark' : 'theme.switchToLight')" placement="bottom">
             <el-button circle @click="themeStore.toggleTheme()">
@@ -152,14 +155,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useSystemStore } from '@/stores/system'
 import { useLocaleStore } from '@/stores/locale'
 import { useThemeStore } from '@/stores/theme'
+import { useWebSocketStore } from '@/stores/websocket'
+import ConnectionStatus from '@/components/ConnectionStatus.vue'
 import {
   DataLine,
   Operation,
@@ -178,11 +183,13 @@ import {
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 const userStore = useUserStore()
 const systemStore = useSystemStore()
 const localeStore = useLocaleStore()
 const themeStore = useThemeStore()
+const wsStore = useWebSocketStore()
 
 const isCollapse = ref(false)
 const capacityUtilization = ref('')
@@ -224,10 +231,30 @@ const fetchCapacity = async () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   fetchCapacity()
   // 每30秒刷新一次容量信息
   refreshTimer = setInterval(fetchCapacity, 30000)
+
+  // 如果已登录且WebSocket未连接，自动连接
+  if (userStore.token && !wsStore.isConnected) {
+    try {
+      const currentPage = route.name?.toString() || 'dashboard'
+      await wsStore.connect(userStore.token, currentPage)
+      console.log('[MainLayout] Auto-connected to WebSocket on page:', currentPage)
+    } catch (error) {
+      console.error('[MainLayout] Failed to auto-connect WebSocket:', error)
+    }
+  }
+
+  // 监听路由变化，通知WebSocket store切换页面订阅策略
+  watch(() => route.name, (newPage) => {
+    if (newPage && wsStore.isConnected) {
+      // 将路由名称转换为页面名称（例如 'dashboard' -> 'dashboard'）
+      const pageName = newPage.toString()
+      wsStore.switchPage(pageName)
+    }
+  }, { immediate: true })
 })
 
 onUnmounted(() => {

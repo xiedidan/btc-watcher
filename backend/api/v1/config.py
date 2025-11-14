@@ -63,6 +63,7 @@ class SystemConfigResponse(BaseModel):
     """Full system configuration response"""
     id: int
     market_data: Dict[str, Any]
+    heartbeat_monitor: Dict[str, Any]
     updated_at: str
 
 
@@ -84,6 +85,7 @@ async def get_system_config(
         return SystemConfigResponse(
             id=config.id,
             market_data=config.market_data,
+            heartbeat_monitor=config.heartbeat_monitor,
             updated_at=config.updated_at.isoformat()
         )
 
@@ -199,4 +201,113 @@ async def get_default_market_data_config(
 
     except Exception as e:
         logger.error(f"Failed to get default market data config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Heartbeat Monitor Configuration Models
+class HeartbeatMonitorConfigUpdate(BaseModel):
+    """Heartbeat monitor configuration update request"""
+    enabled: bool | None = None
+    default_timeout_seconds: int | None = None
+    check_interval_seconds: int | None = None
+    auto_restart: bool | None = None
+    max_restart_attempts: int | None = None
+    restart_cooldown_seconds: int | None = None
+    notification_enabled: bool | None = None
+    notification_priority: str | None = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "enabled": True,
+                "default_timeout_seconds": 300,
+                "check_interval_seconds": 30,
+                "auto_restart": True,
+                "max_restart_attempts": 3,
+                "restart_cooldown_seconds": 60,
+                "notification_enabled": True,
+                "notification_priority": "P2"
+            }
+        }
+
+
+class HeartbeatMonitorConfigResponse(BaseModel):
+    """Heartbeat monitor configuration response"""
+    enabled: bool
+    default_timeout_seconds: int
+    check_interval_seconds: int
+    auto_restart: bool
+    max_restart_attempts: int
+    restart_cooldown_seconds: int
+    notification_enabled: bool
+    notification_priority: str
+
+
+# Heartbeat Monitor Endpoints
+@router.get("/config/heartbeat-monitor", response_model=HeartbeatMonitorConfigResponse)
+async def get_heartbeat_monitor_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get heartbeat monitor configuration
+    
+    Returns heartbeat monitor specific configuration
+    """
+    try:
+        config_service = await get_system_config_service(db)
+        config = await config_service.get_full_config()
+        
+        return HeartbeatMonitorConfigResponse(**config.heartbeat_monitor)
+    
+    except Exception as e:
+        logger.error(f"Failed to get heartbeat monitor config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/config/heartbeat-monitor", response_model=HeartbeatMonitorConfigResponse)
+async def update_heartbeat_monitor_config(
+    config_update: HeartbeatMonitorConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update heartbeat monitor configuration
+    
+    Updates heartbeat monitor configuration with deep merge.
+    Only provided fields will be updated, others remain unchanged.
+    """
+    try:
+        config_service = await get_system_config_service(db)
+        
+        # Get current config
+        current_config = await config_service.get_full_config()
+        
+        # Convert update to dict and remove None values
+        update_dict = config_update.model_dump(exclude_none=True)
+        
+        # Merge with existing config
+        updated_heartbeat_config = {**current_config.heartbeat_monitor, **update_dict}
+        
+        # Update in database
+        from sqlalchemy import update
+        from models.system_config import SystemConfig
+        
+        stmt = update(SystemConfig).where(
+            SystemConfig.id == 1
+        ).values(
+            heartbeat_monitor=updated_heartbeat_config
+        )
+        
+        await db.execute(stmt)
+        await db.commit()
+        
+        logger.info(f"Heartbeat monitor configuration updated by user {current_user.id}")
+        
+        return HeartbeatMonitorConfigResponse(**updated_heartbeat_config)
+    
+    except ValueError as e:
+        logger.warning(f"Invalid heartbeat monitor configuration update: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to update heartbeat monitor config: {e}")
         raise HTTPException(status_code=500, detail=str(e))

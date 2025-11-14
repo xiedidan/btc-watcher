@@ -176,6 +176,33 @@ class WebSocketService:
         except Exception as e:
             logger.error(f"Failed to push log entry: {e}", exc_info=True)
 
+    @staticmethod
+    async def push_strategy_log(strategy_id: int, log_entry: Dict[str, Any]):
+        """
+        推送策略日志到订阅了该策略的客户端
+
+        Args:
+            strategy_id: 策略ID
+            log_entry: 日志条目 (包含timestamp, level, logger, message, raw)
+        """
+        try:
+            message = {
+                "type": "data",
+                "topic": f"strategy_{strategy_id}_logs",
+                "data": {
+                    "strategy_id": strategy_id,
+                    "log": log_entry
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # 推送给订阅该策略日志的客户端
+            await manager.broadcast(message, topic=f"strategy_{strategy_id}_logs")
+            logger.debug(f"Pushed log for strategy {strategy_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to push strategy log: {e}", exc_info=True)
+
 
 # 创建全局实例
 ws_service = WebSocketService()

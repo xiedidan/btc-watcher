@@ -348,20 +348,11 @@ onMounted(() => {
   fetchDashboardData()
   fetchSignalTrend()
 
-  // Connect to WebSocket and subscribe to topics
-  if (userStore.token && !wsStore.isConnected) {
-    wsStore.connect(userStore.token)
-  }
+  // WebSocket连接和订阅由 stores/user.js 在登录时自动处理
+  // realtimeAdapter 会根据当前页面自动订阅相应主题
+  // 无需手动连接和订阅
 
-  // Subscribe to real-time updates
-  setTimeout(() => {
-    wsStore.subscribe('monitoring')
-    wsStore.subscribe('strategies')
-    wsStore.subscribe('signals')
-    wsStore.subscribe('capacity')
-  }, 500) // 给连接建立一点时间
-
-  // 每30秒刷新一次（作为WebSocket的备份）
+  // 每30秒刷新一次（作为备份）
   refreshTimer = setInterval(fetchDashboardData, 30000)
 })
 
@@ -391,12 +382,8 @@ onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer)
   }
-
-  // Unsubscribe from WebSocket topics when leaving dashboard
-  wsStore.unsubscribe('monitoring')
-  wsStore.unsubscribe('strategies')
-  wsStore.unsubscribe('signals')
-  wsStore.unsubscribe('capacity')
+  // WebSocket订阅由 realtimeAdapter 自动管理
+  // 页面切换时会通过 switchPage 方法自动更新订阅策略
 })
 </script>
 
