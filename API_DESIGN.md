@@ -695,7 +695,7 @@ Discord支持两种配置模式：
 {
   "channel_type": "discord",
   "config": {
-    "bot_token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.GaBcDe.FgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRs",
+    "bot_token": "ABCDEFG",
     "channel_id": "987654321098765432"
   }
 }
