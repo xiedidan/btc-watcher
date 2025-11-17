@@ -1,0 +1,140 @@
+{
+  "project": "BTC Watcher",
+  "description": "加密货币信号监控与分析系统",
+  "version": "1.0.0",
+  "context_files": [
+    ".ai/context.md",
+    ".ai/rules.md",
+    "README.md"
+  ],
+  "coding_standards": {
+    "python": {
+      "style": "PEP 8",
+      "formatter": "black",
+      "linter": "flake8",
+      "type_hints": "required",
+      "async": "required for I/O operations"
+    },
+    "javascript": {
+      "framework": "Vue 3",
+      "api": "Composition API",
+      "formatter": "prettier",
+      "linter": "eslint",
+      "style": "script setup"
+    },
+    "testing": {
+      "required": true,
+      "coverage_minimum": 80,
+      "frameworks": {
+        "backend": "pytest",
+        "frontend": "vitest"
+      }
+    }
+  },
+  "project_structure": {
+    "backend": {
+      "api": "backend/api/v1/",
+      "services": "backend/services/",
+      "models": "backend/models/",
+      "tests": "backend/tests/",
+      "entry": "backend/main.py"
+    },
+    "frontend": {
+      "views": "frontend/src/views/",
+      "components": "frontend/src/components/",
+      "api": "frontend/src/api/",
+      "stores": "frontend/src/stores/",
+      "entry": "frontend/src/main.js"
+    },
+    "docs": {
+      "user": "docs/user/",
+      "architecture": "docs/architecture/",
+      "implementation": "docs/implementation/",
+      "testing": "docs/testing/",
+      "adr": "docs/adr/"
+    }
+  },
+  "documentation_rules": {
+    "new_features": "docs/implementation/features/",
+    "bug_fixes": "docs/implementation/bug-fixes/",
+    "architecture_decisions": "docs/adr/",
+    "test_reports": "docs/testing/test-reports/",
+    "api_changes": "docs/architecture/api-design.md"
+  },
+  "forbidden": [
+    "Root-level markdown files (except README.md, CHANGELOG.md, LICENSE)",
+    "Hardcoded credentials or API keys",
+    "Synchronous I/O in async functions",
+    "SQL string concatenation",
+    "Deleting documentation (archive instead)",
+    "Commits without tests for new features"
+  ],
+  "api_patterns": {
+    "base_url": "/api/v1",
+    "authentication": "JWT Bearer Token",
+    "pagination": "skip and limit query parameters",
+    "error_format": {
+      "status_code": "HTTP status code",
+      "detail": "Error message"
+    }
+  },
+  "tech_stack": {
+    "backend": {
+      "framework": "FastAPI 0.104",
+      "orm": "SQLAlchemy 2.0 (async)",
+      "database": "PostgreSQL 15",
+      "cache": "Redis 7",
+      "auth": "JWT",
+      "testing": "pytest, pytest-asyncio"
+    },
+    "frontend": {
+      "framework": "Vue 3.4",
+      "ui_library": "Element Plus 2.5",
+      "state_management": "Pinia 2.1",
+      "charts": "ECharts 5.4",
+      "http_client": "Axios 1.6",
+      "build_tool": "Vite 5.0"
+    },
+    "infrastructure": {
+      "containerization": "Docker + Docker Compose",
+      "reverse_proxy": "Nginx",
+      "process_management": "Docker"
+    }
+  },
+  "common_tasks": {
+    "create_api_endpoint": [
+      "Define route in backend/api/v1/",
+      "Implement service in backend/services/",
+      "Define schema in backend/schemas/",
+      "Write tests in backend/tests/integration/",
+      "Update API documentation"
+    ],
+    "create_vue_page": [
+      "Create component in frontend/src/views/",
+      "Add route in frontend/src/router/",
+      "Create API client in frontend/src/api/",
+      "Add store if needed in frontend/src/stores/",
+      "Write E2E test in frontend/tests/e2e/"
+    ],
+    "database_migration": [
+      "Update model in backend/models/",
+      "Generate migration: alembic revision --autogenerate",
+      "Review migration file",
+      "Apply migration: alembic upgrade head",
+      "Update documentation"
+    ]
+  },
+  "performance_requirements": {
+    "api_response_time_p90": "< 100ms",
+    "concurrent_requests": "> 1000 QPS",
+    "websocket_latency": "< 50ms",
+    "database_connection_pool": "5-20 connections"
+  },
+  "security_requirements": {
+    "authentication": "JWT for all endpoints except public ones",
+    "password_hashing": "bcrypt",
+    "environment_variables": "Use .env for sensitive data",
+    "sql_injection_prevention": "Use ORM only",
+    "xss_prevention": "Vue automatic escaping"
+  }
+}
